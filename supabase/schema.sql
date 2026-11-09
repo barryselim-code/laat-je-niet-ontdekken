@@ -88,6 +88,10 @@ create table if not exists public.sessies (
   aangemaakt     timestamptz not null default now(),
   verloopt       timestamptz not null default now() + interval '3 days'
 );
+-- Testmodus (avondnaam "barry-test-spel"): nepspelers, nepmissies en wisselen van perspectief
+alter table public.sessies add column if not exists test boolean not null default false;
+alter table public.sessies add column if not exists test_eigenaar uuid;
+alter table public.sessies add column if not exists test_als uuid;
 
 create table if not exists public.spelers (
   id                   uuid primary key default gen_random_uuid(),
@@ -235,8 +239,13 @@ $$;
 
 create or replace function geheim.mij(p_sessie uuid) returns public.spelers
 language plpgsql security definer set search_path = public as $$
-declare v public.spelers;
+declare v public.spelers; s public.sessies;
 begin
+  select * into s from public.sessies where id = p_sessie;
+  if s.test and s.test_als is not null and s.test_eigenaar = auth.uid() then
+    select * into v from public.spelers where id = s.test_als and sessie_id = p_sessie and not verwijderd;
+    if found then return v; end if;
+  end if;
   select * into v from public.spelers
    where sessie_id = p_sessie and user_id = auth.uid() and not verwijderd;
   if not found then raise exception 'geen_speler'; end if;
@@ -288,6 +297,30 @@ begin
   select * into sp from public.spelers where id = p_speler;
   select * into s from public.sessies where id = sp.sessie_id;
   select * into v_oud from public.toewijzingen where speler_id = p_speler;
+
+  if s.test then
+    -- Nepmissie: de echte missies blijven geheim, ook voor de tester
+    v_getal := 1 + (select count(*) + coalesce(sum(cardinality(gewisseld)), 0) from public.toewijzingen where sessie_id = s.id)::int;
+    select x.id, x.naam into v_doelwit, v_doelwitnaam from public.spelers x
+     where x.sessie_id = s.id and x.id <> p_speler and not x.verwijderd order by random() limit 1;
+    v_tekst := 'Testmissie ' || v_getal || case when v_getal % 2 = 0 and v_doelwit is not null
+                 then ': laat ' || v_doelwitnaam || ' iets over het weer zeggen.' else ': zeg twee keer het woord "testwoord".' end;
+    if v_getal % 2 <> 0 then v_doelwit := null; end if;
+    v_uitleg := 'Dit is een nepmissie voor de testavond; geen echte missie.';
+    if v_oud.speler_id is null then
+      insert into public.toewijzingen (speler_id, sessie_id, missie_id, moeilijkheid, categorie, tekst_enc, uitleg_enc, doelwit_id)
+      values (p_speler, s.id, 'test-' || v_getal, 1 + v_getal % 3, (array['gesprek','beïnvloeden','woord','gedrag','tafel'])[1 + v_getal % 5],
+              geheim.versleutel(v_tekst), geheim.versleutel(v_uitleg), v_doelwit);
+    else
+      update public.toewijzingen
+         set gewisseld = gewisseld || v_oud.missie_id, missie_id = 'test-' || v_getal, moeilijkheid = 1 + v_getal % 3,
+             categorie = (array['gesprek','beïnvloeden','woord','gedrag','tafel'])[1 + v_getal % 5],
+             tekst_enc = geheim.versleutel(v_tekst), uitleg_enc = geheim.versleutel(v_uitleg), doelwit_id = v_doelwit,
+             toegewezen_op = now(), voltooid_op = null, getuige_id = null
+       where speler_id = p_speler;
+    end if;
+    return;
+  end if;
 
   v_levels := case s.moeilijkheid when 'makkelijk' then array[1,2]
                                   when 'moeilijk'  then array[2,3]
@@ -424,15 +457,23 @@ begin
   if auth.uid() is null then raise exception 'niet_ingelogd'; end if;
   if v_naam = '' then raise exception 'naam_leeg'; end if;
   perform geheim.opruimen();
-  insert into public.sessies (code, naam, thema, moeilijkheid, context, punten_aan)
+  insert into public.sessies (code, naam, thema, moeilijkheid, context, punten_aan, test, test_eigenaar)
   values (geheim.nieuwe_code(), coalesce(nullif(left(trim(p_naam), 40), ''), 'Laat je niet ontdekken!'),
           coalesce(nullif(lower(p_thema), ''), 'kerst'), coalesce(p_moeilijkheid, 'gemengd'),
-          coalesce(p_context, '{}'), coalesce(p_punten, true))
+          coalesce(p_context, '{}'), coalesce(p_punten, true),
+          lower(trim(coalesce(p_naam, ''))) = 'barry-test-spel',
+          case when lower(trim(coalesce(p_naam, ''))) = 'barry-test-spel' then auth.uid() end)
   returning * into s;
   insert into public.spelers (sessie_id, user_id, naam, volgnr)
   values (s.id, auth.uid(), v_naam, 1) returning id into v_speler;
   update public.sessies set host_id = v_speler where id = s.id;
   insert into public.aanwezig values (v_speler, now());
+  if s.test then
+    insert into public.spelers (sessie_id, user_id, naam, volgnr)
+    select s.id, gen_random_uuid(), n, 1 + i
+      from unnest(array['Anna','Bert','Cees']) with ordinality as t(n, i)
+     where lower(n) <> lower(v_naam);
+  end if;
   return json_build_object('sessie_id', s.id, 'code', s.code, 'speler_id', v_speler);
 end $$;
 
@@ -733,6 +774,20 @@ begin
   update public.sessies set host_melding = null where id = p_sessie;
 end $$;
 
+-- Testmodus: de eigenaar kiest als welke speler hij speelt (null = zichzelf)
+create or replace function public.test_wissel(p_sessie uuid, p_speler uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare s public.sessies;
+begin
+  select * into s from public.sessies where id = p_sessie;
+  if not found or not s.test or s.test_eigenaar is distinct from auth.uid() then raise exception 'geen_test'; end if;
+  if p_speler is not null and not exists (select 1 from public.spelers where id = p_speler and sessie_id = p_sessie and not verwijderd) then
+    raise exception 'onbekende_speler';
+  end if;
+  update public.sessies set test_als = case when p_speler = (select id from public.spelers where sessie_id = p_sessie and user_id = auth.uid() and not verwijderd) then null else p_speler end
+   where id = p_sessie;
+end $$;
+
 -- Hartslag; neemt de hostrol over als de host 90 s weg is
 create or replace function public.ping(p_sessie uuid)
 returns json language plpgsql security definer set search_path = public as $$
@@ -742,7 +797,7 @@ begin
   insert into public.aanwezig values (v.id, now())
     on conflict (speler_id) do update set laatst_gezien = now();
   select * into s from public.sessies where id = p_sessie;
-  if s.host_id is distinct from v.id then
+  if not s.test and s.host_id is distinct from v.id then
     select laatst_gezien into v_host_gezien from public.aanwezig where speler_id = s.host_id;
     if v_host_gezien is null or v_host_gezien < now() - interval '90 seconds'
        or exists (select 1 from public.spelers where id = s.host_id and verwijderd) then
@@ -1077,7 +1132,7 @@ begin
     'reageer(uuid,boolean)', 'host_sluit_beschuldiging(uuid)', 'host_verwijder(uuid)', 'host_extra_joker(uuid)',
     'host_melding_weg(uuid)', 'ping(uuid)', 'beeindig_spel(uuid)', 'onthul_stap(uuid,boolean)',
     'onthulling_data(uuid)', 'stem(uuid,uuid,text,uuid)', 'naar_scorebord(uuid)', 'is_lid(uuid)',
-    'beheer_overzicht(text)', 'beheer_import(text,jsonb,jsonb,boolean)'
+    'test_wissel(uuid,uuid)', 'beheer_overzicht(text)', 'beheer_import(text,jsonb,jsonb,boolean)'
   ] loop
     execute format('revoke execute on function public.%s from public, anon', f);
     execute format('grant execute on function public.%s to authenticated', f);

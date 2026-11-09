@@ -25,7 +25,10 @@ const ls = {
   set(k, v) { try { localStorage.setItem('ta.' + k, JSON.stringify(v)); } catch {} },
   del(k) { try { localStorage.removeItem('ta.' + k); } catch {} },
 };
-const ik = () => S.spelers.find((p) => p.user_id === uid && !p.verwijderd);
+const ceremonieKey = () => 'ceremonie.' + S.sid;
+const echteIk = () => S.spelers.find((p) => p.user_id === uid && !p.verwijderd);
+const testEigenaar = () => !!S.sessie?.test && S.sessie.test_eigenaar === uid;
+const ik = () => (testEigenaar() && S.sessie.test_als && S.spelers.find((p) => p.id === S.sessie.test_als && !p.verwijderd)) || echteIk();
 const speler = (id) => S.spelers.find((p) => p.id === id);
 const naam = (id) => speler(id)?.naam ?? 'Iemand';
 const isHost = () => S.sessie && ik() && S.sessie.host_id === ik().id;
@@ -142,10 +145,19 @@ function render() {
   const sel = focusId && ae.selectionStart != null ? [ae.selectionStart, ae.selectionEnd] : null;
   const html = (views[S.view] || vHome)();
   document.body.className = /class="screen licht/.test(html.slice(0, 80)) ? 'licht-bg' : /class="feest/.test(html.slice(0, 80)) ? 'feest-bg' : '';
-  $app.innerHTML = html + vOverlay() + vUitslag() + vSheet() + vToasts();
+  const test = S.view === 'sessie' && testEigenaar();
+  document.body.classList.toggle('testmodus', test);
+  $app.innerHTML = (test ? vTestbalk() : '') + html + vOverlay() + vUitslag() + vSheet() + vToasts();
   if (focusId) { const el = document.getElementById(focusId); if (el) { el.focus({ preventScroll: true }); if (sel && el.setSelectionRange) try { el.setSelectionRange(...sel); } catch {} } }
   if (S.view === 'sessie' && S.sessie?.status === 'lobby') tekenQR();
   tik();
+}
+
+// Testmodus: wissel van perspectief tussen alle spelers
+function vTestbalk() {
+  const me = ik();
+  return `<div class="testbalk" role="toolbar" aria-label="Testmodus: speel als"><span class="lbl">Test · speel als</span>
+    ${actief().map((p) => `<button class="${p.id === me?.id ? 'aan' : ''}" data-a="test-als" data-id="${p.id}" aria-pressed="${p.id === me?.id}">${esc(p.naam)}${p.id === S.sessie.host_id ? ' ★' : ''}</button>`).join('')}</div>`;
 }
 
 function vLaden() { return `<main class="screen"><div class="center-msg"><div class="spinner" role="status" aria-label="Laden"></div></div></main>`; }
@@ -254,7 +266,7 @@ function vSessie() {
   if (!s) return vLaden();
   if (s.status === 'lobby') return vLobby();
   if (s.status === 'spel') {
-    if (!ls.get('ceremonie.' + S.sid)) return S.uitlegStap < 3 ? vUitleg() : vEnvelop();
+    if (!ls.get(ceremonieKey())) return S.uitlegStap < 3 ? vUitleg() : vEnvelop();
     return vSpel();
   }
   if (s.status === 'onthulling') return isHost() ? vOnthullingHost() : vOnthullingSpeler();
@@ -467,7 +479,7 @@ function vSpelersTab() {
 
 // Volledig scherm voor de beschuldigde
 function vOverlay() {
-  if (S.view !== 'sessie' || S.sessie?.status !== 'spel' || !ls.get('ceremonie.' + S.sid)) return '';
+  if (S.view !== 'sessie' || S.sessie?.status !== 'spel' || !ls.get(ceremonieKey())) return '';
   const me = ik(), b = me && openBesch().find((x) => x.beschuldigde_id === me.id);
   if (!b) { vOverlay.laatste = null; return ''; }
   const nieuw = vOverlay.laatste !== b.id; vOverlay.laatste = b.id;
@@ -725,14 +737,14 @@ async function laadAlles() {
   if (sid !== S.sid) return;
   if (ses.error || spl.error) { console.warn(ses.error || spl.error); return; }
   if (!ses.data) return verlaat(S.eersteLaad ? null : 'Deze avond bestaat niet meer, of je bent van tafel gehaald.');
-  const vorig = { status: S.sessie?.status, ontm: ik()?.ontmaskerd, stap: S.sessie && `${S.sessie.onthul_index}${S.sessie.onthul_stap}` };
+  const vorig = { status: S.sessie?.status, ontm: ik()?.ontmaskerd, als: ik()?.id, stap: S.sessie && `${S.sessie.onthul_index}${S.sessie.onthul_stap}` };
   S.sessie = ses.data; S.spelers = spl.data || []; S.deel = dee.data || []; S.stemmen = ste.data || []; S.overnames = ove.data || [];
   const nieuweBesch = bes.data || [];
   if (!ik()) return verlaat(S.eersteLaad ? null : 'Je zit niet meer aan deze tafel.');
   meldingen(nieuweBesch);
   S.besch = nieuweBesch;
   ls.set('sessie', { sid, code: S.sessie.code });
-  if (S.sessie.status === 'spel' && (!S.missie || vorig.status !== 'spel' || vorig.ontm !== ik().ontmaskerd)) await laadMissie();
+  if (S.sessie.status === 'spel' && (!S.missie || vorig.status !== 'spel' || vorig.ontm !== ik().ontmaskerd || vorig.als !== ik().id)) await laadMissie();
   if (['onthulling', 'einde'].includes(S.sessie.status) && (!S.onthulling || vorig.status !== S.sessie.status)) {
     try { S.onthulling = await rpc('onthulling_data', { p_sessie: sid }); } catch (e) { console.warn(e); }
   }
@@ -867,7 +879,7 @@ const ACTIES = {
   'uitleg-volgende': () => { S.uitlegStap++; window.scrollTo(0, 0); },
   'uitleg-klaar': () => { S.uitlegStap = 3; S.envelop = 'dicht'; window.scrollTo(0, 0); },
   zegel: () => { if (S.envelop !== 'dicht') return; S.envelop = 'open'; tril(60); setTimeout(() => { S.envelop = 'donker'; render(); }, 1700); },
-  'naar-missie': () => { ls.set('ceremonie.' + S.sid, true); S.tab = 'missie'; },
+  'naar-missie': () => { ls.set(ceremonieKey(), true); S.tab = 'missie'; },
   start: () => doe(() => rpc('start_spel', { p_sessie: S.sid })),
   tab: (el) => { S.tab = el.dataset.v; S.fout = null; window.scrollTo(0, 0); },
   voltooid: () => { S.sheet = { type: 'voltooid', getuige: null }; },
@@ -895,6 +907,15 @@ const ACTIES = {
   stem: (el) => doe(async () => { const v = stemVraag(); if (!v) return; await rpc('stem', { p_sessie: S.sid, p_speler: huidig().id, p_keuze: el.dataset.val, p_beschuldiging: v.besch }); await laadNu(); }),
   scorebord: () => doe(() => rpc('naar_scorebord', { p_sessie: S.sid })),
   'missies-terug': () => { S.sheet = { type: 'missies' }; },
+  'test-als': (el) => doe(async () => {
+    if (el.dataset.id === ik()?.id) return;
+    await rpc('test_wissel', { p_sessie: S.sid, p_speler: el.dataset.id });
+    S.sheet = null; S.uitslag = null; S.missie = null; S.eersteLaad = true; S.gezien = new Set(); S.tab = 'missie';
+    if (S.vasthouden) toonMissie(false);
+    await laadNu();
+    const me = ik(), b = openBesch().find((x) => x.beschuldigde_id !== me?.id && !doetMee(x.id));
+    if (b && S.sessie.status === 'spel') S.sheet = { type: 'melding', id: b.id };
+  }),
   'sheet-dicht': () => { S.sheet = null; S.fout = null; },
   scrim: (el, ev) => { if (ev.target === el && S.sheet?.type !== 'naambestaat') { S.sheet = null; S.fout = null; } },
   'uitslag-dicht': () => { S.uitslag = null; },

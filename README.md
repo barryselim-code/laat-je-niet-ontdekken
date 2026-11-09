@@ -21,6 +21,10 @@ Installeerbare web-app (PWA) waarin iedereen aan tafel een geheime missie krijgt
 - Speluitleg en 3 uitlegkaarten bij de eerste keer
 - Randgevallen: laatkomers, speler verwijderen (gratis wissel voor wie hem als doelwit had), host valt weg (hostrol schuift door), dubbele namen, telefoon leeg (overname met bevestiging van de host), geen reactie op een beschuldiging (host sluit na 2 minuten), pool raakt op (filters versoepelen + melding)
 
+## Testavond
+
+Noem de avond **barry-test-spel**. Er schuiven dan direct 3 nepspelers aan (Anna, Bert, Cees) en bovenin verschijnt een paarse balk *Test · speel als*. Daarmee wissel je op elk moment van perspectief: alles wat je doet (beschuldigen, meedoen, toegeven, voltooien, joker, stemmen) doe je als die speler. Een testavond gebruikt nepmissies, zodat de echte missies geheim blijven.
+
 ## Installeren: eenmalig
 
 ### 1. Supabase-project
