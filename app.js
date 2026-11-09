@@ -11,7 +11,7 @@ let sb = null, uid = null, kanaal = null, pingTimer = null, tikTimer = null, laa
 
 const S = {
   view: 'laden', terug: 'home', fout: null, bezig: false,
-  form: { naam: '', hostNaam: '', thema: 'kerst', moeilijkheid: 'gemengd', context: ['eten', 'drinken', 'gastheer', 'versiering'], soorten: ['praten', 'sturen', 'doen'], punten: true, code: '', spelerNaam: '' },
+  form: { naam: '', hostNaam: '', thema: 'kerst', moeilijkheid: 'gemengd', context: ['eten', 'drinken', 'gastheer', 'versiering'], soorten: ['praten', 'sturen', 'doen'], punten: true, code: '', spelerNaam: '', geslacht: null, avatar: null },
   sid: null, sessie: null, spelers: [], besch: [], deel: [], overnames: [], bevestig: null,
   missie: null, onthulling: null, tab: 'missie', offset: 0,
   sheet: null, toasts: [], uitslag: null, gezien: new Set(), eersteLaad: true,
@@ -26,6 +26,7 @@ const ls = {
   set(k, v) { try { localStorage.setItem('ta.' + k, JSON.stringify(v)); } catch {} },
   del(k) { try { localStorage.removeItem('ta.' + k); } catch {} },
 };
+{ const pr = ls.get('profiel'); if (pr) { S.form.geslacht = pr.geslacht || null; S.form.avatar = pr.avatar ?? null; } }
 const ceremonieKey = () => 'ceremonie.' + S.sid + '.' + (S.sessie?.ronde || 1);
 const heeftCeremonie = () => !!(ls.get(ceremonieKey()) || ls.get('ceremonie.' + S.sid + '.alle'));
 const echteIk = () => S.spelers.find((p) => p.user_id === uid && !p.verwijderd);
@@ -52,7 +53,55 @@ const risico = (n, w = 34, h = 10) => `<span class="risico" role="img" aria-labe
 const CLIP = '<svg class="ds-clip" width="26" height="64" viewBox="0 0 26 64" aria-hidden="true"><path d="M8 8 V50 a5 5 0 0 0 10 0 V12 a8 8 0 0 0 -16 0 V46" fill="none" stroke="#8C877C" stroke-width="2.6" stroke-linecap="round"/></svg>';
 const STEMPELKLEUR = { GEFLIKT: '#2F7D52', BETRAPT: '#C2372C', ONGEZIEN: '#2F4F9A' };
 const TINTEN = [['#B3262E', '#FFFFFF'], ['#1F5C45', '#FFFFFF'], ['#E9C774', '#3A0C0F']];
-const ini = (p, i) => { const [bg, fg] = TINTEN[(i ?? (p.volgnr - 1)) % 3]; return `<span class="ini" style="background:${bg};color:${fg}">${esc(p.naam[0]?.toUpperCase())}</span>`; };
+// ---------- avatars: 20 per geslacht, getekend als SVG ----------
+const AV_HUID = ['#F6D3B8', '#E9B48E', '#C98B5E', '#9A6440', '#6B4429'];
+const AV_HAAR = ['#2A1D17', '#5B3A24', '#A0612F', '#D9B26A', '#B8B3AA', '#C2452D'];
+const AV_ACHTER = ['#B3262E', '#1F5C45', '#E9C774', '#2F4F9A', '#7A3B6E'];
+const AV_SHIRT = ['#FBF3E4', '#2A1D17', '#5B6470', '#D98C3A', '#8FB8A8'];
+const AV_KAP = { m: ['kort', 'kuif', 'kaal', 'krul', 'scheiding', 'stekel'], v: ['lang', 'bob', 'knot', 'staart', 'krullen', 'pony'] };
+const AV_EXTRA = { m: ['', 'bril', 'baard', 'snor', 'muts'], v: ['', 'bril', 'oorbel', 'strik', 'muts'] };
+function avatarDef(g, nr) {
+  const i = nr % 20, kap = AV_KAP[g][(i * 2 + Math.floor(i / 5)) % 6];
+  return { huid: AV_HUID[i % 5], haar: AV_HAAR[(i * 3 + (g === 'v' ? 2 : 0)) % 6], kap, extra: AV_EXTRA[g][Math.floor(i / 4) % 5],
+    achter: AV_ACHTER[(i * 2 + (g === 'v' ? 1 : 0)) % 5], shirt: AV_SHIRT[(i + 2) % 5] };
+}
+function avatarSvg(g, nr, maat = 40) {
+  if (!g || nr == null) return '';
+  const d = avatarDef(g, nr), h = d.haar, achter = [], voor = [];
+  const kap = (p) => voor.push(`<path d="${p}" fill="${h}"/>`);
+  switch (d.kap) {
+    case 'kort': kap('M19 30 Q18 15 32 15 Q46 15 45 30 Q43 21 32 21 Q21 21 19 30Z'); break;
+    case 'kuif': kap('M19 30 Q17 16 30 14 Q38 9 45 16 Q47 22 45 30 Q42 21 33 21 Q22 20 19 30Z'); break;
+    case 'kaal': kap('M18.5 31 Q18 25 20 23 L21 31Z'); kap('M45.5 31 Q46 25 44 23 L43 31Z'); break;
+    case 'krul': [[22, 20], [27, 16], [33, 15], [39, 17], [43, 22], [20, 26], [45, 27]].forEach(([x, y]) => voor.push(`<circle cx="${x}" cy="${y}" r="5" fill="${h}"/>`)); break;
+    case 'scheiding': kap('M19 31 Q18 15 33 15 Q46 16 45 31 Q44 22 36 20 L35 23 Q27 19 21 24 Q19 27 19 31Z'); break;
+    case 'stekel': kap('M19 29 L20 18 L24 21 L26 13 L30 19 L33 11 L36 19 L40 13 L41 21 L45 18 L45 29 Q42 22 32 22 Q22 22 19 29Z'); break;
+    case 'lang': achter.push(`<path d="M16 31 Q16 13 32 13 Q48 13 48 31 L49 50 L15 50Z" fill="${h}"/>`); kap('M19 31 Q19 16 32 16 Q45 16 45 31 Q40 21 32 22 Q24 21 19 31Z'); break;
+    case 'bob': achter.push(`<path d="M16 32 Q16 13 32 13 Q48 13 48 32 L48 40 Q44 42 42 40 L22 40 Q20 42 16 40Z" fill="${h}"/>`); kap('M19 30 Q20 16 32 16 Q44 16 45 30 L45 24 Q38 20 26 22 Q21 24 19 30Z'); break;
+    case 'knot': voor.push(`<circle cx="32" cy="11" r="6" fill="${h}"/>`); kap('M19 30 Q18 15 32 15 Q46 15 45 30 Q43 21 32 21 Q21 21 19 30Z'); break;
+    case 'staart': achter.push(`<path d="M44 20 Q54 24 51 40 Q49 46 46 44 Q49 34 43 26Z" fill="${h}"/>`); kap('M19 30 Q18 15 32 15 Q46 15 45 30 Q43 21 32 21 Q21 21 19 30Z'); break;
+    case 'krullen': [[19, 24], [18, 32], [19, 40], [45, 24], [46, 32], [45, 40], [23, 17], [29, 14], [35, 14], [41, 17]].forEach(([x, y]) => achter.push(`<circle cx="${x}" cy="${y}" r="5.5" fill="${h}"/>`)); kap('M20 27 Q24 19 32 19 Q40 19 44 27 Q40 23 32 23 Q24 23 20 27Z'); break;
+    case 'pony': achter.push(`<path d="M17 31 Q17 13 32 13 Q47 13 47 31 L47 44 L17 44Z" fill="${h}"/>`); kap('M19 28 Q19 15 32 15 Q45 15 45 28 L19 28Z'); break;
+  }
+  const x = d.extra, extra = [];
+  if (x === 'bril') extra.push('<g fill="none" stroke="#2A1D17" stroke-width="1.6"><circle cx="27" cy="30" r="3.6"/><circle cx="37" cy="30" r="3.6"/><path d="M30.6 30 H33.4"/></g>');
+  if (x === 'baard') extra.push(`<path d="M20 31 Q21 45 32 46 Q43 45 44 31 Q42 38 37 38 Q32 36 27 38 Q22 38 20 31Z" fill="${h}"/>`);
+  if (x === 'snor') extra.push(`<path d="M26.5 35.5 Q29 33 32 34.4 Q35 33 37.5 35.5 Q34 35.5 32 35 Q30 35.5 26.5 35.5Z" fill="${h}"/>`);
+  if (x === 'oorbel') extra.push('<circle cx="19" cy="35" r="1.8" fill="#E9C774"/><circle cx="45" cy="35" r="1.8" fill="#E9C774"/>');
+  if (x === 'strik') extra.push('<path d="M38 15 L44 11 L44 19Z M38 15 L32 11 L32 19Z" fill="#B3262E"/><circle cx="38" cy="15" r="1.8" fill="#8E1C22"/>');
+  if (x === 'muts') extra.push('<path d="M18 23 Q24 6 40 9 Q46 10 50 17 L45 21 Q40 14 34 15 Q25 16 18 23Z" fill="#C2302A"/><circle cx="50" cy="18" r="3.2" fill="#FBF3E4"/><path d="M17 24 Q31 15 46 22" stroke="#FBF3E4" stroke-width="4" stroke-linecap="round" fill="none"/>');
+  const mond = x === 'snor' ? '' : '<path d="M28.5 36 Q32 39 35.5 36" fill="none" stroke="#5A2A1E" stroke-width="1.5" stroke-linecap="round"/>';
+  return `<svg class="avatar" width="${maat}" height="${maat}" viewBox="0 0 64 64" aria-hidden="true"><clipPath id="avc"><circle cx="32" cy="32" r="32"/></clipPath><g clip-path="url(#avc)">
+    <rect width="64" height="64" fill="${d.achter}"/>${achter.join('')}
+    <path d="M10 64 Q12 47 32 47 Q52 47 54 64Z" fill="${d.shirt}"/><rect x="28" y="40" width="8" height="8" rx="3" fill="${d.huid}"/>
+    <circle cx="18.5" cy="31" r="3" fill="${d.huid}"/><circle cx="45.5" cy="31" r="3" fill="${d.huid}"/><ellipse cx="32" cy="30" rx="13" ry="14" fill="${d.huid}"/>
+    ${voor.join('')}<circle cx="27" cy="30" r="1.7" fill="#2A1D17"/><circle cx="37" cy="30" r="1.7" fill="#2A1D17"/>${mond}${extra.join('')}</g></svg>`;
+}
+
+// Voornaamwoorden per speler (onbekend geslacht: hij/zij)
+const vnw = (p) => (p?.geslacht === 'v' ? { hij: 'zij', Hij: 'Zij', zijn: 'haar', hem: 'haar' } : p?.geslacht === 'm' ? { hij: 'hij', Hij: 'Hij', zijn: 'zijn', hem: 'hem' } : { hij: 'hij/zij', Hij: 'Hij/zij', zijn: 'zijn/haar', hem: 'hem/haar' });
+const avatarVan = (p, maat) => (p?.geslacht && p.avatar != null ? avatarSvg(p.geslacht, p.avatar, maat) : '');
+const ini = (p, i) => { const a = avatarVan(p, 40); if (a) return `<span class="ini av">${a}</span>`; const [bg, fg] = TINTEN[(i ?? (p.volgnr - 1)) % 3]; return `<span class="ini" style="background:${bg};color:${fg}">${esc(p.naam[0]?.toUpperCase())}</span>`; };
 
 const FOUTEN = {
   niet_ingelogd: 'Geen verbinding met de server. Probeer het opnieuw.',
@@ -75,6 +124,7 @@ const FOUTEN = {
   spel_loopt_nog: 'Het spel loopt nog.',
   ongeldig_abonnement: 'Meldingen konden niet worden aangezet.',
   al_afgerond: 'Deze betrapping is al afgerond.',
+  geslacht_leeg: 'Kies of je een man of een vrouw bent.',
   pool_op: 'De opdrachten zijn op. Vraag de host om nieuwe opdrachten.',
   spel_loopt_niet: 'Het spel loopt nu niet.',
   geen_speler: 'Je zit niet (meer) aan deze tafel.',
@@ -154,7 +204,7 @@ function render() {
   const views = { laden: vLaden, home: vHome, nieuw: vNieuw, deelnemen: vDeelnemen, speluitleg: vSpeluitleg, overname: vOvernameWacht, sessie: vSessie, weg: vWeg };
   const ae = document.activeElement, focusId = ae && ae.id;
   const sel = focusId && ae.selectionStart != null ? [ae.selectionStart, ae.selectionEnd] : null;
-  const html = (['home', 'deelnemen'].includes(S.view) && startScherm()) || (views[S.view] || vHome)();
+  const html = S.gesloten ? vGesloten() : (['home', 'deelnemen'].includes(S.view) && startScherm()) || (views[S.view] || vHome)();
   document.body.className = /class="screen licht/.test(html.slice(0, 80)) ? 'licht-bg' : /class="feest/.test(html.slice(0, 80)) ? 'feest-bg' : '';
   const test = S.view === 'sessie' && testEigenaar();
   document.body.classList.toggle('testmodus', test);
@@ -171,13 +221,20 @@ function vTestbalk() {
     ${actief().map((p) => `<button class="${p.id === me?.id ? 'aan' : ''}" data-a="test-als" data-id="${p.id}" aria-pressed="${p.id === me?.id}">${esc(p.naam)}${p.id === S.sessie.host_id ? ' ★' : ''}</button>`).join('')}</div>`;
 }
 
+// Een webapp mag zichzelf niet altijd sluiten; lukt window.close() niet, dan dit scherm.
+function vGesloten() {
+  return `<main class="screen licht toestemming"><div class="ts-midden"><div class="ts-bel"><span class="ts-ico">${I.vink || I.bel}</span></div>
+      <h1>Tot de volgende keer!</h1>
+      <p>Je telefoon laat de app niet zelf sluiten. Veeg hem weg via de knop met je open apps.${S.sid ? ' Je avond blijft gewoon bewaard.' : ''}</p></div>
+    <div class="foot" style="padding:0 24px 32px"><button class="btn ghost" data-a="app-terug">Terug naar de app</button></div></main>`;
+}
 function vLaden() { return `<main class="screen"><div class="center-msg"><div class="spinner" role="status" aria-label="Laden"></div></div></main>`; }
 
 function vHome() {
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.navigator.standalone;
   return `<main class="screen licht" style="padding-top:0">
     <div class="home-kop stippen">
-      <div style="display:flex;justify-content:flex-end"><button class="iconbtn" data-a="speluitleg" aria-label="Spelregels">${I.vraag}</button></div>
+      <div style="display:flex;justify-content:flex-end"><button class="iconbtn" data-a="menu" aria-label="Menu">${I.meer}</button></div>
       <div class="home-hero">${LOGO}
         <h1>Betrapt!</h1>
         <p>Iedereen een geheime opdracht. Wie wordt er betrapt voor het dessert?</p>
@@ -192,18 +249,26 @@ function vHome() {
     </div></main>`;
 }
 
+// Man/vrouw (voor de juiste woorden, zoals 'zij verdenkt je') en een avatar
+function profielKiezer() {
+  const f = S.form;
+  return `<div class="profiel"><span class="label">Ik ben een</span>
+    <div class="seg" role="radiogroup" aria-label="Man of vrouw">${[['m', 'Man'], ['v', 'Vrouw']].map(([k, t]) => `<button role="radio" aria-checked="${f.geslacht === k}" aria-pressed="${f.geslacht === k}" data-a="geslacht" data-val="${k}">${t}</button>`).join('')}</div>
+    ${f.geslacht ? `<span class="label" style="margin-top:6px">Kies je avatar</span><div class="av-grid" role="radiogroup" aria-label="Avatar">${Array.from({ length: 20 }, (_, i) => `<button class="av-keus ${f.avatar === i ? 'on' : ''}" role="radio" aria-checked="${f.avatar === i}" aria-label="Avatar ${i + 1}" data-a="avatar" data-i="${i}">${avatarSvg(f.geslacht, i, 52)}</button>`).join('')}</div>` : ''}</div>`;
+}
 function vNieuw() {
   const f = S.form, pr = (b) => (b ? 'true' : 'false');
   const ctx = [['eten', 'Er wordt gegeten'], ['drinken', 'Er wordt gedronken'], ['gastheer', 'Er is een gastheer of -vrouw'], ['kinderen', 'Kinderen aan tafel'], ...(f.thema === 'kerst' ? [['versiering', 'Kerstversiering op tafel']] : [])];
   const soorten = [['praten', 'Praten', 'gesprek sturen, woorden gebruiken'], ['sturen', 'Sturen', 'een ander iets laten zeggen of doen'], ['doen', 'Doen', 'gedrag en spullen op tafel']];
   return `<main class="screen licht">
-    <div class="kop-terug"><button class="iconbtn" data-a="view" data-v="home" aria-label="Terug">${I.terug}</button></div>
+    <div class="kop-terug kop-menu"><button class="iconbtn" data-a="view" data-v="home" aria-label="Terug">${I.terug}</button><button class="iconbtn" data-a="menu" aria-label="Menu">${I.meer}</button></div>
     <div style="display:flex;align-items:center;gap:10px;padding:0 24px 4px"><h1 class="titel-serif" style="color:var(--kerstrood)">Nieuwe avond</h1><span style="width:24px;height:24px;color:#C99A2E">${I.ster}</span></div>
     <div class="body">
       <div class="field"><label class="label" for="f-naam">Naam van de avond</label>
         <input class="input" id="f-naam" data-f="naam" value="${esc(f.naam)}" placeholder="Kerstavond 2026" maxlength="40" autocomplete="off"></div>
       <div class="field"><label class="label" for="f-host">Jouw naam aan tafel</label>
-        <input class="input" id="f-host" data-f="hostNaam" value="${esc(f.hostNaam)}" placeholder="Bijv. Barry" maxlength="20" autocomplete="given-name"></div>
+        <input class="input" id="f-host" data-f="hostNaam" value="${esc(f.hostNaam)}" placeholder="Bijv. Barry" maxlength="20" autocomplete="given-name">
+        ${profielKiezer()}</div>
       <div class="field"><span class="label">Thema</span><div class="tegels">
         <button class="tegel" data-a="set" data-k="thema" data-val="kerst" aria-pressed="${pr(f.thema === 'kerst')}">${f.thema === 'kerst' ? `<span style="color:var(--feestgoud)">${I.ster}</span>` : ''}Kerst</button>
         <button class="tegel" data-a="set" data-k="thema" data-val="algemeen" aria-pressed="${pr(f.thema === 'algemeen')}">${f.thema === 'algemeen' ? `<span style="color:var(--feestgoud)">${I.ster}</span>` : ''}Algemeen</button></div></div>
@@ -220,7 +285,7 @@ function vNieuw() {
 function vDeelnemen() {
   const f = S.form, c = (f.code + '    ').slice(0, 4);
   return `<main class="screen licht">
-    <div class="kop-terug"><button class="iconbtn" data-a="view" data-v="home" aria-label="Terug">${I.terug}</button></div>
+    <div class="kop-terug kop-menu"><button class="iconbtn" data-a="view" data-v="home" aria-label="Terug">${I.terug}</button><button class="iconbtn" data-a="menu" aria-label="Menu">${I.meer}</button></div>
     <div style="display:flex;flex-direction:column;gap:6px;padding:0 24px 4px"><h1 class="titel-serif" style="color:var(--den)">Schuif aan</h1><span style="font-size:15px;color:var(--ink2)">De host heeft de code op zijn scherm.</span></div>
     <div class="body" style="gap:28px;padding-top:24px">
       <div class="field" style="gap:12px"><label class="label" for="c0">Code van de avond</label>
@@ -229,7 +294,8 @@ function vDeelnemen() {
           : `<button class="btn klein groen-rand" data-a="scan">${I.scan}Scan de QR-code</button>`}</div>
       <div class="field"><label class="label" for="f-sp">Je naam aan tafel</label>
         <input class="input" id="f-sp" data-f="spelerNaam" value="${esc(f.spelerNaam)}" placeholder="Bijv. Fleur" maxlength="20" autocomplete="given-name">
-        <span class="hint">Zo heet je in de lijst en bij de onthulling.</span></div>
+        <span class="hint">Zo heet je in de lijst en bij de onthulling.</span>
+        ${profielKiezer()}</div>
       ${S.fout ? `<p class="error" role="alert">${esc(S.fout)}</p>` : ''}
     </div>
     <div class="foot"><button class="btn rood" data-a="join" ${S.bezig ? 'disabled' : ''}>${S.bezig ? 'Bezig…' : 'Aanschuiven'}</button></div></main>`;
@@ -370,7 +436,7 @@ function vLobby() {
   return `<main class="screen licht">
     <div class="lobby-kaart stippen">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span class="naam-avond">${esc(s.naam)}</span>
-        <span style="display:flex;align-items:center;gap:4px">${host ? '<span class="badge-host">Host</span>' : ''}<button class="iconbtn" style="color:var(--creme)" data-a="speluitleg" aria-label="Spelregels">${I.vraag}</button></span></div>
+        <span style="display:flex;align-items:center;gap:4px">${host ? '<span class="badge-host">Host</span>' : ''}<button class="iconbtn" style="color:var(--creme)" data-a="menu" aria-label="Menu">${I.meer}</button></span></div>
       <div style="display:flex;align-items:center;gap:18px">
         <div class="qr" id="qr" role="img" aria-label="QR-code om aan te schuiven"></div>
         <div style="display:flex;flex-direction:column;gap:4px"><span style="font-size:13px;color:#FBE7DA">Code</span><span class="bigcode">${esc(s.code)}</span><span style="font-size:13px;color:#FBE7DA">Scan of typ de code</span></div>
@@ -521,7 +587,7 @@ function vSpelkop() {
   return `<div class="spelkop2">
     <div class="sk-rij"><span class="sk-naam">${esc(s.naam)} <span>· ${esc(s.code)}</span></span>
       <span class="sk-r">${echteHost() ? `<button class="sk-stop" data-a="beeindig">Spel stoppen</button>` : ''}
-        <button class="iconbtn" data-a="speluitleg" aria-label="Spelregels">${I.vraag}</button><button class="iconbtn" data-a="menu" aria-label="Menu">${I.meer}</button></span></div>
+        <button class="iconbtn" data-a="menu" aria-label="Menu">${I.meer}</button></span></div>
     ${meldingenUit ? `<button class="sk-melding" data-a="meldingen-aan">${I.belUit}<span>Meldingen staan uit · je mist betrappingen</span><u>Aanzetten</u></button>` : ''}
     ${eind ? `<div class="sk-tijd ${rood ? 'rood' : ''}" data-tijdblok="${eind}"><div><span class="l">${I.klok}<span>Speltijd</span></span><span class="t"><b data-speltijd="${eind}">${fmtMin(ms)}</b> <span>over</span></span></div>
       <div class="sk-balk"><i data-tijdbalk style="width:${Math.min(100, Math.max(0, 100 - (ms / SPELDUUR) * 100))}%"></i></div></div>` : ''}
@@ -568,7 +634,7 @@ function vBetrapGrid() {
       else if (b && doetMee(b.id)) knop = `<button class="bk-knop mee" data-a="open-besch" data-id="${b.id}">Jij zag het</button>`;
       else if (b) knop = `<button class="bk-knop ook" data-a="meedoen" data-id="${b.id}">Ik zag het<br>ook!</button>`;
       else knop = `<button class="bk-knop" data-a="betrap" data-id="${p.id}" aria-label="Betrap ${esc(p.naam)}">Betrapt!</button>`;
-      return `<div class="bk ${p.ontmaskerd ? 'grijs' : ''}"><span class="bk-i">${esc(p.naam[0]?.toUpperCase())}</span><span class="bk-naam">${esc(p.naam)}</span>${knop}</div>`;
+      return `<div class="bk ${p.ontmaskerd ? 'grijs' : ''}"><span class="bk-i ${p.geslacht ? 'av' : ''}">${avatarVan(p, 36) || esc(p.naam[0]?.toUpperCase())}</span><span class="bk-naam">${esc(p.naam)}</span>${knop}</div>`;
     }).join('')}</div></section>`;
 }
 // Doelwit en woord in de opdrachttekst laten opvallen
@@ -611,7 +677,7 @@ function vOverlay() {
   const lang = (nu() - new Date(b.laatste_meedoen).getTime()) / 1000 > HOST_SLUIT;
   const kies = S.bevestig?.id === b.id ? S.bevestig.val : null, ja = kies === 'ja';
   return `<div class="accused ${nieuw ? 'anim' : ''}" role="alertdialog" aria-modal="true" aria-labelledby="acc-t"><div class="inner">
-    <span class="acc-titel">Betrapt?!</span><h2 id="acc-t">${esc(namenLijst(namen))} ${namen.length > 1 ? 'denken dat ze je hebben' : 'denkt dat hij je heeft'}</h2>
+    <span class="acc-titel">Betrapt?!</span><h2 id="acc-t">${esc(namenLijst(namen))} ${namen.length > 1 ? 'denken dat ze je hebben' : `denkt dat ${vnw(S.spelers.find((x) => x.naam === namen[0])).hij} je heeft`}</h2>
     <div class="acc-dossier"><div class="acc-inhoud"><span class="ds-lbl">JOUW OPDRACHT</span><p class="tekst">${esc(S.missie?.tekst || '')}</p><span class="balk" style="width:92%"></span><span class="balk" style="width:78%"></span><span class="balk" style="width:56%"></span></div>
       <div class="check-missie" id="checkmissie" role="button" tabindex="0" aria-label="Houd vast om je opdracht te checken"><span class="dicht-t">${I.hand}Houd hier vast om je opdracht te checken</span><span class="open-t">${I.hand}Je houdt vast · loslaten = dicht</span></div></div>
     <div class="acc-vraag"><b>Raakt hun vermoeden de kern van je opdracht?</b><span>Letterlijk hoeft niet. Bij de onthulling ziet iedereen wat je koos.</span></div>
@@ -713,7 +779,7 @@ function volgendeLabel() {
 function vOnthullingHost() {
   const { stap, n, i } = huidig(), lbl = volgendeLabel();
   return `<main class="feest stippen">
-    <div class="feest-top"><b>De onthulling</b><span>Speler ${Math.min(i + 1, n)} van ${n}</span></div>
+    <div class="feest-top"><b>De onthulling</b><span>Speler ${Math.min(i + 1, n)} van ${n}</span><button class="iconbtn feest-menu" data-a="menu" aria-label="Menu">${I.meer}</button></div>
     <div class="feest-main ${revealAnim()} ${stap === 'naam' ? 'tik' : ''}" ${stap === 'naam' ? 'data-a="onthul-volgende" role="button" tabindex="0"' : ''}>${vOnthullingInhoud(true)}</div>
     <p class="feest-noot">De host tikt door · iedereen kijkt mee op het grote scherm</p>
     <div class="feest-voet"><button class="btn fk-rand" data-a="onthul-vorige" ${i === 0 && stap === 'naam' ? 'disabled' : ''}>Vorige</button>
@@ -722,7 +788,7 @@ function vOnthullingHost() {
 function vOnthullingSpeler() {
   const { n, i } = huidig();
   return `<main class="feest stippen">
-    <div class="feest-top"><b>De onthulling</b><span>Speler ${Math.min(i + 1, n)} van ${n}</span></div>
+    <div class="feest-top"><b>De onthulling</b><span>Speler ${Math.min(i + 1, n)} van ${n}</span><button class="iconbtn feest-menu" data-a="menu" aria-label="Menu">${I.meer}</button></div>
     <div class="feest-main ${revealAnim()}" style="justify-content:flex-start;padding-top:32px">${vOnthullingInhoud(false)}</div>
     <div class="foot" style="width:100%;max-width:480px;margin:0 auto"><p class="foot-note" style="color:#F0D9C9;font-size:15px">Kijk mee op het scherm van de host.</p></div></main>`;
 }
@@ -779,23 +845,33 @@ function vSheet() {
   } else if (sh.type === 'menu') {
     const host = echteHost() && S.sessie?.status === 'spel', me = ik();
     const stil = openBesch().filter((b) => (nu() - new Date(b.laatste_meedoen).getTime()) / 1000 > HOST_SLUIT && b.beschuldigde_id !== me?.id);
+    const inSpel = S.view === 'sessie' && S.sessie?.status === 'spel';
+    const mAan = meldingenAan(), zn = zoemerNr();
+    const schakel = (a, aan, ico, titel, sub, uit) => `<button class="mn-schakel" data-a="${a}" role="switch" aria-checked="${aan}" ${uit ? 'disabled' : ''}>
+        <span class="mn-ico">${ico}</span><span class="mn-t"><b>${titel}</b><small>${sub}</small></span><span class="schakelaar ${aan ? 'aan' : ''}"><i></i></span></button>`;
     inner = `<h2>Menu</h2>
+      <span class="k">Permissies</span>
+      <div class="mn-groep">
+        ${schakel('geluid-wissel', geluidAan(), I.geluid, 'Zoemer en geluid', geluidAan() ? 'Zet ook het volume van je telefoon hoger' : 'Uit: Betrapt! is stil')}
+        ${geluidAan() ? `<div class="mn-zoemers" role="radiogroup" aria-label="Kies je zoemer">${ZOEMERS.map(([n], i) => `<button class="zm ${i === zn ? 'aan' : ''}" role="radio" aria-checked="${i === zn}" data-a="zoemer-kies" data-i="${i}">${esc(n)}</button>`).join('')}</div>` : ''}
+        ${schakel('meldingen-wissel', mAan, I.bel, 'Meldingen', !pushKan() ? 'Op iPhone alleen vanaf je beginscherm' : pushStatus() === 'denied' ? 'Geblokkeerd: zet ze aan in je telefooninstellingen' : mAan ? 'Je hoort het als iemand Betrapt! roept' : 'Uit: je mist betrappingen', !pushKan() || pushStatus() === 'denied')}
+      </div>
       <button class="btn klein" data-a="speluitleg">${I.vraag}Spelregels</button>
-      ${pushKan() && pushStatus() !== 'granted' ? `<button class="btn klein" data-a="meldingen-aan">Meldingen aanzetten</button>` : ''}
-      <button class="btn klein" data-a="geluid-wissel" aria-pressed="${geluidAan()}">${I.geluid}Geluid ${geluidAan() ? 'uitzetten' : 'aanzetten'}</button>
-      ${host ? `${stil.map((b) => `<button class="btn klein" data-a="host-sluit" data-id="${b.id}">${esc(naam(b.beschuldigde_id))} reageert niet: sluit als Mooi niet!</button>`).join('')}
+      ${!inSpel ? '' : host ? `${stil.map((b) => `<button class="btn klein" data-a="host-sluit" data-id="${b.id}">${esc(naam(b.beschuldigde_id))} reageert niet: sluit als Mooi niet!</button>`).join('')}
         <span class="k" style="margin-top:6px">Spelers (host)</span>
         <div class="menu-spelers">${actief().filter((p) => p.id !== echteIk()?.id).map((p) => `<button class="pick" data-a="spelermenu" data-id="${p.id}">${esc(p.naam)}</button>`).join('')}</div>
         <button class="btn klein" style="border-color:var(--rood-rand);color:var(--rood-t)" data-a="beeindig">Spel beëindigen en onthullen</button>
         <button class="btn ghost klein" style="color:var(--rood-t)" data-a="annuleer">Avond annuleren</button>`
       : `<button class="btn ghost klein" data-a="verlaat">Tafel verlaten</button>`}
-      <button class="btn ghost" data-a="sheet-dicht">Sluiten</button>`;
+      <button class="btn klein mn-sluit" data-a="app-sluiten">App sluiten</button>
+      <button class="btn ghost" data-a="sheet-dicht">Terug</button>`;
   } else if (sh.type === 'meldingen') {
     inner = `<h2>Meldingen aanzetten?</h2><p>Dan trilt je telefoon en krijg je een melding als iemand Betrapt! roept, ook als je scherm op slot zit. Ben jij betrapt, dan trilt hij elke 15 seconden tot je kiest.</p>
       <button class="btn goud" data-a="meldingen-aan">Aanzetten</button><button class="btn ghost" data-a="meldingen-later">Later</button>`;
   } else if (sh.type === 'melding') {
     const b = S.besch.find((x) => x.id === sh.id);
-    if (!b || b.status !== 'open' || doetMee(b.id)) { S.sheet = null; return ''; }
+    if (!b) return ''; // nog niet binnen (oudere verversing): venster open laten
+    if (b.status !== 'open' || doetMee(b.id)) { S.sheet = null; return ''; }
     const d = deelnemers(b.id);
     inner = `<div style="display:flex;align-items:center;gap:16px"><span class="mt-oog">${I.oog}</span><div><span class="k">Betrapt!</span><h2>${esc(naam(b.eerste_beschuldiger_id))} betrapt ${esc(naam(b.beschuldigde_id))}!</h2></div></div>
       <div class="naam-chips">${d.map((x) => `<span class="${x.rol === 'eerste' ? 'eerste' : ''}">${esc(naam(x.speler_id))}${x.rol === 'eerste' ? ' · betrapper' : ''}</span>`).join('')}<span style="background:transparent;color:var(--faint)">zagen het ook</span></div>
@@ -803,7 +879,8 @@ function vSheet() {
       <div class="twee een-twee"><button class="btn klein" data-a="sheet-dicht">Later</button><button class="btn goud klein" data-a="meedoen" data-id="${b.id}">Ik zag het ook!</button></div>`;
   } else if (sh.type === 'open-besch') {
     const b = S.besch.find((x) => x.id === sh.id);
-    if (!b || b.status !== 'open') { S.sheet = null; return ''; }
+    if (!b) return '';
+    if (b.status !== 'open') { S.sheet = null; return ''; }
     const d = deelnemers(b.id), me = ik();
     const wie = esc(naam(b.beschuldigde_id));
     inner = `<div class="ob-kop"><span>${b.eerste_beschuldiger_id === me?.id ? 'Jij betrapt' : `${esc(naam(b.eerste_beschuldiger_id))} betrapt`}</span><h2>${wie}</h2><span class="ob-stempel">BETRAPT?</span></div>
@@ -917,10 +994,15 @@ async function laadAlles() {
   S.eersteLaad = false;
   render();
 }
-let laadtBezig = null, nogEens = false;
+// Loopt er al een verversing, dan wacht de aanroeper op een nieuwe ronde daarna
+// (de lopende is misschien gestart vóór de wijziging die de aanroeper net deed).
+let laadtBezig = null, volgende = null;
 function laadNu() {
-  if (laadtBezig) { nogEens = true; return laadtBezig; }
-  laadtBezig = laadAlles().catch(console.warn).finally(() => { laadtBezig = null; if (nogEens) { nogEens = false; laadNu(); } });
+  if (laadtBezig) {
+    if (!volgende) volgende = laadtBezig.then(() => { volgende = null; return laadNu(); });
+    return volgende;
+  }
+  laadtBezig = laadAlles().catch(console.warn).finally(() => { laadtBezig = null; });
   return laadtBezig;
 }
 const planLaad = () => { clearTimeout(laadTimer); laadTimer = setTimeout(laadNu, 120); };
@@ -1009,10 +1091,12 @@ function audio() {
     return AC;
   } catch { return null; }
 }
-function toon(ctx, { type = 'sine', f1, f2, t = 0, duur = 0.3, piek = 0.6, filter }) {
+function toon(ctx, { type = 'sine', f1, f2, t = 0, duur = 0.3, piek = 0.6, filter, vib, galm }) {
   const o = ctx.createOscillator(), g = ctx.createGain(), s = ctx.currentTime + t;
   o.type = type; o.frequency.setValueAtTime(f1, s); if (f2) o.frequency.exponentialRampToValueAtTime(f2, s + duur * 0.8);
-  g.gain.setValueAtTime(0.0001, s); g.gain.exponentialRampToValueAtTime(piek, s + 0.012); g.gain.setValueAtTime(piek, s + duur * 0.55);
+  if (vib) { const l = ctx.createOscillator(), lg = ctx.createGain(); l.frequency.value = vib[0]; lg.gain.value = vib[1]; l.connect(lg).connect(o.frequency); l.start(s); l.stop(s + duur + 0.05); }
+  g.gain.setValueAtTime(0.0001, s); g.gain.exponentialRampToValueAtTime(piek, s + 0.012);
+  if (!galm) g.gain.setValueAtTime(piek, s + duur * 0.55);
   g.gain.exponentialRampToValueAtTime(0.0001, s + duur);
   let uit = g;
   if (filter) { const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = filter; g.connect(lp); uit = lp; }
@@ -1024,13 +1108,22 @@ function bonk() {
   try { toon(ctx, { f1: 150, f2: 45, duur: 0.32, piek: 0.95 }); toon(ctx, { type: 'triangle', f1: 90, f2: 40, duur: 0.22, piek: 0.5 }); } catch {}
 }
 // Zoemer bij Betrapt! (alleen op de telefoon van wie drukt): kort spelshow-geluid
-function zoemer() {
+const ZOEMERS = [
+  ['Spelshow', (c) => { toon(c, { type: 'sawtooth', f1: 146, duur: 0.42, piek: 0.32, filter: 1400 }); toon(c, { type: 'square', f1: 151, duur: 0.42, piek: 0.18, filter: 1100 }); toon(c, { type: 'sine', f1: 73, duur: 0.42, piek: 0.4 }); }],
+  ['Scheidsrechter', (c) => { toon(c, { f1: 2600, duur: 0.18, piek: 0.28, vib: [38, 90] }); toon(c, { f1: 2600, t: 0.24, duur: 0.42, piek: 0.28, vib: [38, 90] }); }],
+  ['Toeter', (c) => { toon(c, { type: 'square', f1: 392, duur: 0.36, piek: 0.2, filter: 1800 }); toon(c, { type: 'square', f1: 494, duur: 0.36, piek: 0.16, filter: 1800 }); }],
+  ['Ding-dong', (c) => { toon(c, { f1: 880, duur: 0.7, piek: 0.5, galm: true }); toon(c, { f1: 698, t: 0.32, duur: 0.9, piek: 0.5, galm: true }); }],
+  ['Sirene', (c) => { toon(c, { type: 'triangle', f1: 600, f2: 1200, duur: 0.35, piek: 0.4 }); toon(c, { type: 'triangle', f1: 1200, f2: 600, t: 0.35, duur: 0.35, piek: 0.4 }); }],
+  ['Laser', (c) => { toon(c, { type: 'square', f1: 1600, f2: 180, duur: 0.32, piek: 0.18, filter: 3000 }); }],
+  ['Gong', (c) => { toon(c, { f1: 98, duur: 1.4, piek: 0.6, galm: true }); toon(c, { f1: 196.5, duur: 1.1, piek: 0.25, galm: true }); toon(c, { f1: 293, duur: 0.8, piek: 0.12, galm: true }); }],
+  ['Bliep-bliep', (c) => { toon(c, { type: 'square', f1: 1046, duur: 0.1, piek: 0.18, filter: 2500 }); toon(c, { type: 'square', f1: 1046, t: 0.16, duur: 0.1, piek: 0.18, filter: 2500 }); }],
+  ['Tadaa', (c) => { [523.25, 659.25, 783.99].forEach((f, i) => toon(c, { type: 'triangle', f1: f, t: i * 0.09, duur: 0.5, piek: 0.4, galm: true })); }],
+  ['Stempel', (c) => { toon(c, { f1: 150, f2: 45, duur: 0.32, piek: 0.95 }); toon(c, { type: 'triangle', f1: 90, f2: 40, duur: 0.22, piek: 0.5 }); }],
+];
+const zoemerNr = () => Math.min(ZOEMERS.length - 1, Math.max(0, ls.get('zoemer', 0)));
+function zoemer(nr = zoemerNr()) {
   const ctx = audio(); if (!ctx) return;
-  try {
-    toon(ctx, { type: 'sawtooth', f1: 146, duur: 0.42, piek: 0.32, filter: 1400 });
-    toon(ctx, { type: 'square', f1: 151, duur: 0.42, piek: 0.18, filter: 1100 });
-    toon(ctx, { type: 'sine', f1: 73, duur: 0.42, piek: 0.4 });
-  } catch {}
+  try { ZOEMERS[nr][1](ctx); } catch {}
 }
 // Ontgrendel het geluid bij elke tik (iPhone/Chrome spelen pas na een aanraking)
 document.addEventListener('pointerdown', () => { if (geluidAan() && (!AC || AC.state !== 'running')) audio(); }, { capture: true, passive: true });
@@ -1065,6 +1158,8 @@ const ACTIES = {
   'speluitleg-terug': () => { S.view = S.terug || 'home'; },
   'naar-home': () => verlaat(),
   set: (el) => { S.form[el.dataset.k] = el.dataset.val; },
+  geslacht: (el) => { if (S.form.geslacht !== el.dataset.val) S.form.avatar = Math.floor(Math.random() * 20); S.form.geslacht = el.dataset.val; },
+  avatar: (el) => { S.form.avatar = Number(el.dataset.i); },
   soort: (el) => { const c = S.form.soorten, v = el.dataset.val; if (c.includes(v) && c.length === 1) return; S.form.soorten = c.includes(v) ? c.filter((x) => x !== v) : [...c, v]; },
   ctx: (el) => { const c = S.form.context, v = el.dataset.val; S.form.context = c.includes(v) ? c.filter((x) => x !== v) : [...c, v]; },
   punten: () => { S.form.punten = !S.form.punten; },
@@ -1072,8 +1167,10 @@ const ACTIES = {
   maak: () => doe(async () => {
     const f = S.form;
     if (!f.hostNaam.trim()) throw new Error('naam_leeg');
-    ls.set('naam', f.hostNaam.trim());
+    if (!f.geslacht) throw new Error('geslacht_leeg');
+    ls.set('naam', f.hostNaam.trim()); ls.set('profiel', { geslacht: f.geslacht, avatar: f.avatar ?? 0 });
     const r = await rpc('maak_sessie', { p_naam: f.naam || null, p_host_naam: f.hostNaam, p_thema: f.thema, p_moeilijkheid: f.moeilijkheid, p_context: f.context.filter((c) => c !== 'versiering' || f.thema === 'kerst'), p_punten: f.punten, p_soorten: f.soorten });
+    await zetProfiel(r.sessie_id);
     await betreed(r.sessie_id);
   }),
   join: () => joinMet(null),
@@ -1125,7 +1222,11 @@ const ACTIES = {
   'meldingen-later': () => { START.meldingen = true; S.sheet = null; },
   'geluid-aan': () => { geluidVerberg(); ls.set('geluid', 'aan'); START.geluid = true; audio(); zoemer(); },
   'geluid-uit': () => { geluidVerberg(); ls.set('geluid', 'uit'); START.geluid = true; },
-  'geluid-wissel': () => { if (geluidAan()) ls.set('geluid', 'uit'); else { ls.set('geluid', 'aan'); audio(); zoemer(); } },  scorebord: () => doe(() => rpc('naar_scorebord', { p_sessie: S.sid })),
+  'geluid-wissel': () => { if (geluidAan()) ls.set('geluid', 'uit'); else { ls.set('geluid', 'aan'); audio(); zoemer(); } },
+  'zoemer-kies': (el) => { ls.set('zoemer', Number(el.dataset.i)); zoemer(Number(el.dataset.i)); },
+  'meldingen-wissel': () => { if (meldingenAan()) { ls.set('meldingen.uit', true); pushAfmelden(); } else { ls.del('meldingen.uit'); return pushAan().then(render); } },
+  'app-sluiten': () => { S.sheet = null; try { window.close(); } catch {} setTimeout(() => { S.gesloten = true; render(); }, 250); },
+  'app-terug': () => { S.gesloten = false; },  scorebord: () => doe(() => rpc('naar_scorebord', { p_sessie: S.sid })),
   'missies-terug': () => { S.sheet = { type: 'missies' }; },
   'test-als': (el) => doe(async () => {
     if (el.dataset.id === ik()?.id) return;
@@ -1142,15 +1243,20 @@ const ACTIES = {
   toast: (el) => { S.toasts = S.toasts.filter((t) => t.id !== el.dataset.id); },
 };
 
+async function zetProfiel(sid) {
+  try { await rpc('zet_profiel', { p_sessie: sid, p_geslacht: S.form.geslacht, p_avatar: S.form.avatar ?? 0 }); } catch (e) { console.warn('profiel', e); }
+}
 async function joinMet(keuze) {
   await doe(async () => {
     const f = S.form;
     if (f.code.replace(/\s/g, '').length !== 4) throw new Error('code_kort');
     if (!f.spelerNaam.trim()) throw new Error('naam_leeg');
-    ls.set('naam', f.spelerNaam.trim());
+    if (!f.geslacht) throw new Error('geslacht_leeg');
+    ls.set('naam', f.spelerNaam.trim()); ls.set('profiel', { geslacht: f.geslacht, avatar: f.avatar ?? 0 });
     const r = await rpc('join_sessie', { p_code: f.code, p_naam: f.spelerNaam, p_keuze: keuze });
     if (r.status === 'naam_bestaat') { S.sheet = { type: 'naambestaat', naam: r.naam }; return; }
     if (r.status === 'overname_aangevraagd') { S.overname = { id: r.overname_id, naam: f.spelerNaam.trim() }; ls.set('overname', S.overname); S.view = 'overname'; wachtOpOvername(); return; }
+    await zetProfiel(r.sessie_id);
     await betreed(r.sessie_id);
   });
 }
@@ -1246,7 +1352,12 @@ async function pushAan() {
   try { if ((await Notification.requestPermission()) !== 'granted') { toast('Meldingen staan uit', 'Je kunt ze later aanzetten in de instellingen van je telefoon.', 5000); return; } } catch { return; }
   tril(TRIL.tik); await pushKoppel();
 }
+const meldingenAan = () => pushKan() && pushStatus() === 'granted' && !ls.get('meldingen.uit');
+async function pushAfmelden() {
+  try { const reg = await navigator.serviceWorker.ready; const sub = await reg.pushManager.getSubscription(); await sub?.unsubscribe(); } catch (e) { console.warn('push uit', e); }
+}
 async function pushKoppel() {
+  if (ls.get('meldingen.uit')) return;
   if (!S.sid || !CFG.vapidPublicKey || pushStatus() !== 'granted') return;
   try {
     const reg = await navigator.serviceWorker.ready;

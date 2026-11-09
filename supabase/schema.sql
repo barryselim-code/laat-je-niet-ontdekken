@@ -125,6 +125,8 @@ create table if not exists public.spelers (
   aangemaakt           timestamptz not null default now()
 );
 alter table public.spelers add column if not exists opdrachten_geflikt int not null default 0;
+alter table public.spelers add column if not exists geslacht text check (geslacht in ('m', 'v'));   -- voor 'hij/zij'
+alter table public.spelers add column if not exists avatar int check (avatar between 0 and 19);
 create index if not exists spelers_sessie on public.spelers(sessie_id);
 create index if not exists spelers_user on public.spelers(user_id);
 create unique index if not exists spelers_naam_uniek on public.spelers(sessie_id, lower(naam)) where not verwijderd;
@@ -1232,6 +1234,22 @@ begin
    where sessie_id = p_sessie;
 end $$;
 
+-- Profiel: man/vrouw en avatar. In testmodus krijgen de nepspelers er ook een.
+create or replace function public.zet_profiel(p_sessie uuid, p_geslacht text, p_avatar int)
+returns void language plpgsql security definer set search_path = public as $$
+declare v public.spelers; s public.sessies;
+begin
+  v := geheim.echte_ik(p_sessie);
+  if p_geslacht not in ('m', 'v') or p_avatar is null or p_avatar not between 0 and 19 then raise exception 'ongeldig_profiel'; end if;
+  update public.spelers set geslacht = p_geslacht, avatar = p_avatar where id = v.id;
+  select * into s from public.sessies where id = p_sessie;
+  if s.test and s.test_eigenaar = auth.uid() then
+    update public.spelers
+       set geslacht = case naam when 'Anna' then 'v' else 'm' end, avatar = (volgnr * 7) % 20
+     where sessie_id = p_sessie and id <> v.id and geslacht is null;
+  end if;
+end $$;
+
 -- W4: pushabonnement van dit toestel koppelen aan je speler
 create or replace function public.push_aanmelden(p_sessie uuid, p_endpoint text, p_p256dh text, p_auth text)
 returns void language plpgsql security definer set search_path = public as $$
@@ -1397,7 +1415,7 @@ begin
   foreach f in array array[
     'maak_sessie(text,text,text,text,text[],boolean,text[])', 'join_sessie(text,text,text)',
     'overname_check(uuid)', 'host_overname(uuid,boolean)', 'start_spel(uuid)', 'mijn_missie(uuid)',
-    'gebruik_joker(uuid)', 'markeer_voltooid(uuid,uuid[],boolean)', 'nieuwe_opdracht(uuid)', 'nieuwe_ronde(uuid)', 'host_toch_raak(uuid,boolean)', 'push_aanmelden(uuid,text,text,text)', 'beschuldig(uuid,uuid)', 'meedoen(uuid)',
+    'gebruik_joker(uuid)', 'markeer_voltooid(uuid,uuid[],boolean)', 'nieuwe_opdracht(uuid)', 'nieuwe_ronde(uuid)', 'host_toch_raak(uuid,boolean)', 'push_aanmelden(uuid,text,text,text)', 'zet_profiel(uuid,text,integer)', 'beschuldig(uuid,uuid)', 'meedoen(uuid)',
     'reageer(uuid,boolean)', 'host_sluit_beschuldiging(uuid)', 'host_verwijder(uuid)', 'host_extra_joker(uuid)',
     'host_melding_weg(uuid)', 'ping(uuid)', 'beeindig_spel(uuid)', 'onthul_stap(uuid,boolean)',
     'onthulling_data(uuid)', 'naar_scorebord(uuid)', 'is_lid(uuid)',
