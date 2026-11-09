@@ -154,7 +154,7 @@ function render() {
   const views = { laden: vLaden, home: vHome, nieuw: vNieuw, deelnemen: vDeelnemen, speluitleg: vSpeluitleg, overname: vOvernameWacht, sessie: vSessie, weg: vWeg };
   const ae = document.activeElement, focusId = ae && ae.id;
   const sel = focusId && ae.selectionStart != null ? [ae.selectionStart, ae.selectionEnd] : null;
-  const html = (views[S.view] || vHome)();
+  const html = (['home', 'deelnemen'].includes(S.view) && startScherm()) || (views[S.view] || vHome)();
   document.body.className = /class="screen licht/.test(html.slice(0, 80)) ? 'licht-bg' : /class="feest/.test(html.slice(0, 80)) ? 'feest-bg' : '';
   const test = S.view === 'sessie' && testEigenaar();
   document.body.classList.toggle('testmodus', test);
@@ -304,7 +304,7 @@ function vSpeluitleg() {
 function vSessie() {
   const s = S.sessie;
   if (!s) return vLaden();
-  if (s.status === 'lobby') return toestemmingVragen() ? vToestemming() : geluidVragen() ? vGeluidVraag() : vLobby();
+  if (s.status === 'lobby') return vLobby();
   if (s.status === 'spel') {
     if (!heeftCeremonie()) return S.uitlegStap < 5 ? vUitleg() : vEnvelop();
     return vSpel();
@@ -313,8 +313,22 @@ function vSessie() {
   return vScorebord();
 }
 
-const toestemmingVragen = () => pushKan() && Notification.permission === 'default' && !ls.get('meldingen.gevraagd');
+// Toestemmingsschermen bij het openen van de app, vóór je een avond start of aanschuift.
+// Meldingen alleen als ze uit staan; geluid elke keer, tenzij 'niet meer tonen' is aangevinkt.
+const START = { meldingen: false, geluid: false };
+function startScherm() {
+  if (!START.meldingen && pushKan() && Notification.permission !== 'granted') return vToestemming();
+  if (!START.geluid && !ls.get('geluid.verberg')) return vGeluidVraag();
+  return '';
+}
 function vToestemming() {
+  if (Notification.permission === 'denied') return `<main class="screen licht toestemming">
+    <div class="ts-midden"><div class="ts-bel"><span class="ts-ico">${I.bel}</span><span class="ts-stempel">UIT</span></div>
+      <h1>Meldingen staan uit</h1>
+      <p>Je mist dan wie er <b>Betrapt!</b> roept als je telefoon op slot is. De app mag ze niet zelf aanzetten.</p>
+      <div class="ts-kaart"><span><b>Zo zet je ze aan:</b> Instellingen van je telefoon › Apps › Betrapt! (of je browser) › Meldingen › Aan.</span>
+        <span>Daarna de app opnieuw openen.</span></div></div>
+    <div class="foot" style="padding:0 24px 32px"><button class="btn rood" data-a="meldingen-later">Verder</button></div></main>`;
   return `<main class="screen licht toestemming">
     <div class="ts-midden"><div class="ts-bel"><span class="ts-ico">${I.bel}</span><span class="ts-stempel">BETRAPT!</span></div>
       <h1>Mag Betrapt! je waarschuwen?</h1>
@@ -326,7 +340,6 @@ function vToestemming() {
       <span class="ts-noot">Op een iPhone werkt dit alleen als Betrapt! op je beginscherm staat (Deel › Zet op beginscherm).</span></div></main>`;
 }
 
-const geluidVragen = () => ls.get('geluid') == null;
 function vGeluidVraag() {
   return `<main class="screen licht toestemming">
     <div class="ts-midden"><div class="ts-bel"><span class="ts-ico">${I.geluid}</span><span class="ts-stempel">BZZZT!</span></div>
@@ -336,7 +349,8 @@ function vGeluidVraag() {
         <span><b>iPhone op stil?</b> De geluiden van Betrapt! spelen dan toch.</span></div></div>
     <div class="foot" style="padding:0 24px 32px"><button class="btn rood" data-a="geluid-aan">Ja, geluid aan</button>
       <button class="btn ghost klein" data-a="geluid-uit">Liever stil</button>
-      <span class="ts-noot">Je kunt dit later aanpassen in het menu (⋯).</span></div></main>`;
+      <label class="ts-vink"><input type="checkbox" id="geluid-verberg"> Niet meer tonen</label>
+      <span class="ts-noot">Je kunt het geluid later aan- of uitzetten in het menu (⋯).</span></div></main>`;
 }
 
 function hostBanners() {
@@ -468,6 +482,7 @@ function vEnvelop() {
       ${donker ? ENV_KNOP : ''}
     </div></main>`;
 }
+function geluidVerberg() { if (document.getElementById('geluid-verberg')?.checked) ls.set('geluid.verberg', true); }
 const ENV_KNOP = '<button class="btn goud" data-a="naar-missie">Begrepen, aan de slag</button>';
 function envTekst(donker) {
   return `<span class="k">${donker ? `${esc(S.sessie.naam)} · ${esc(S.sessie.code)}` : 'De opdrachten zijn uitgedeeld'}</span>
@@ -1106,10 +1121,10 @@ const ACTIES = {
   'onthul-vorige': () => doe(() => rpc('onthul_stap', { p_sessie: S.sid, p_vooruit: false })),
   'nieuwe-ronde': () => doe(() => rpc('nieuwe_ronde', { p_sessie: S.sid })),
   afsluiten: () => verlaat(),
-  'meldingen-aan': () => { ls.set('meldingen.gevraagd', true); S.sheet = null; pushAan().then(render); },
-  'meldingen-later': () => { ls.set('meldingen.gevraagd', true); S.sheet = null; },
-  'geluid-aan': () => { ls.set('geluid', 'aan'); audio(); zoemer(); },
-  'geluid-uit': () => { ls.set('geluid', 'uit'); },
+  'meldingen-aan': () => { START.meldingen = true; S.sheet = null; pushAan().then(render); },
+  'meldingen-later': () => { START.meldingen = true; S.sheet = null; },
+  'geluid-aan': () => { geluidVerberg(); ls.set('geluid', 'aan'); START.geluid = true; audio(); zoemer(); },
+  'geluid-uit': () => { geluidVerberg(); ls.set('geluid', 'uit'); START.geluid = true; },
   'geluid-wissel': () => { if (geluidAan()) ls.set('geluid', 'uit'); else { ls.set('geluid', 'aan'); audio(); zoemer(); } },  scorebord: () => doe(() => rpc('naar_scorebord', { p_sessie: S.sid })),
   'missies-terug': () => { S.sheet = { type: 'missies' }; },
   'test-als': (el) => doe(async () => {

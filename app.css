@@ -956,3 +956,5 @@ body.testmodus .bev-scrim { top: 48px; }
 .ds2-open .ds-doel b { font-size: 18px; color: #F3D58E; }
 .ds2-uitleg { font-size: 14px; line-height: 1.45; }
 mark.ds-nadruk { background: none; color: #F3D58E; border-bottom: 2px solid rgba(212,178,106,.7); }
+.ts-vink { display: flex; align-items: center; justify-content: center; gap: 10px; min-height: 44px; font-size: 15px; font-weight: 600; color: var(--ink2, #5A4A3E); }
+.ts-vink input { width: 22px; height: 22px; accent-color: var(--kerstrood); }

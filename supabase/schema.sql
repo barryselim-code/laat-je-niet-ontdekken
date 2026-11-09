@@ -406,9 +406,9 @@ begin
     if (v_getal - 1) % 6 <> 1 then v_doelwit := null; end if;
     v_uitleg := 'Dit is een nepopdracht voor de testavond; geen echte opdracht.';
     if v_oud.speler_id is null then
-      insert into public.toewijzingen (speler_id, sessie_id, missie_id, moeilijkheid, categorie, tekst_enc, uitleg_enc, doelwit_id)
+      insert into public.toewijzingen (speler_id, sessie_id, missie_id, moeilijkheid, categorie, tekst_enc, uitleg_enc, doelwit_id, woord_enc)
       values (p_speler, s.id, 'test-' || v_getal, 1 + v_getal % 3, (array['gesprek','beïnvloeden','woord','gedrag','tafel'])[1 + v_getal % 5],
-              geheim.versleutel(v_tekst), geheim.versleutel(v_uitleg), v_doelwit);
+              geheim.versleutel(v_tekst), geheim.versleutel(v_uitleg), v_doelwit, geheim.versleutel(v_woord));
     else
       update public.toewijzingen
          set gewisseld = gewisseld || v_oud.missie_id, missie_id = 'test-' || v_getal, moeilijkheid = 1 + v_getal % 3,
