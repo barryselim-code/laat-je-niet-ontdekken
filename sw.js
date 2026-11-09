@@ -1,7 +1,7 @@
 // Service worker: app-schil offline beschikbaar, data altijd live via Supabase.
-const VERSIE = 'ljno-v4';
+const VERSIE = 'ljno-v5';
 const SCHIL = ['./', 'index.html', 'app.css', 'app.js', 'config.js', 'lib/qrcode.js', 'manifest.webmanifest',
-  'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
+  'icons/logo-v2.svg', 'icons/logo-v2-32.png', 'icons/logo-v2-192.png', 'icons/logo-v2-512.png', 'icons/logo-v2-apple-touch.png', 'favicon.ico'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSIE).then((c) => c.addAll(SCHIL)).then(() => self.skipWaiting()));
