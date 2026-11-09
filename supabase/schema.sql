@@ -148,6 +148,7 @@ create table if not exists public.toewijzingen (
   getuigen          uuid[] not null default '{}'   -- W2: meerdere getuigen
 );
 alter table public.toewijzingen add column if not exists getuigen uuid[] not null default '{}';
+alter table public.toewijzingen add column if not exists woord_enc bytea;  -- ingevuld {woord}, apart getoond in het dossier
 alter table public.toewijzingen drop column if exists getuige_id;
 
 -- W7: geflikte opdrachten waarna de speler een nieuwe pakte. Kunnen niet meer betrapt worden.
@@ -413,7 +414,7 @@ begin
          set gewisseld = gewisseld || v_oud.missie_id, missie_id = 'test-' || v_getal, moeilijkheid = 1 + v_getal % 3,
              categorie = (array['gesprek','beïnvloeden','woord','gedrag','tafel'])[1 + v_getal % 5],
              tekst_enc = geheim.versleutel(v_tekst), uitleg_enc = geheim.versleutel(v_uitleg), doelwit_id = v_doelwit,
-             toegewezen_op = now(), voltooid_op = null, getuigen = '{}'
+             woord_enc = null, toegewezen_op = now(), voltooid_op = null, getuigen = '{}'
        where speler_id = p_speler;
     end if;
     return;
@@ -508,15 +509,16 @@ begin
 
   if v_oud.speler_id is null then
     insert into public.toewijzingen (speler_id, sessie_id, missie_id, moeilijkheid, categorie,
-                                     tekst_enc, uitleg_enc, doelwit_id)
+                                     tekst_enc, uitleg_enc, doelwit_id, woord_enc)
     values (p_speler, s.id, m.id, m.moeilijkheid, m.categorie,
-            geheim.versleutel(v_tekst), geheim.versleutel(v_uitleg), v_doelwit);
+            geheim.versleutel(v_tekst), geheim.versleutel(v_uitleg), v_doelwit, geheim.versleutel(v_woord));
   else
     update public.toewijzingen
        set gewisseld = gewisseld || v_oud.missie_id,
            missie_id = m.id, moeilijkheid = m.moeilijkheid, categorie = m.categorie,
            tekst_enc = geheim.versleutel(v_tekst), uitleg_enc = geheim.versleutel(v_uitleg),
-           doelwit_id = v_doelwit, toegewezen_op = now(), voltooid_op = null, getuigen = '{}'
+           doelwit_id = v_doelwit, woord_enc = geheim.versleutel(v_woord),
+           toegewezen_op = now(), voltooid_op = null, getuigen = '{}'
      where speler_id = p_speler;
   end if;
 end $$;
@@ -727,6 +729,7 @@ begin
     'eerdere', (select count(*) from public.afgeronde_opdrachten a where a.speler_id = v.id),
     'eerdere_punten', (select coalesce(sum(a.punten), 0) from public.afgeronde_opdrachten a where a.speler_id = v.id),
     'doelwit', (select x.naam from public.spelers x where x.id = t.doelwit_id),
+    'woord', geheim.ontsleutel(t.woord_enc),
     'ontmaskerd', v.ontmaskerd,
     'joker_gebruikt', t.joker_gebruikt,
     'joker_tot', t.eerste_toewijzing + interval '10 minutes',

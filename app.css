@@ -932,3 +932,27 @@ body.testmodus .bev-scrim { top: 48px; }
 @media (prefers-reduced-motion: reduce) { .sk-tijd.rood .t { animation: none !important; } }
 .sk-melding span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sk-melding u { flex-shrink: 0; }
+
+/* ---- feedback 9 nov avond ---- */
+/* Uitleg 2/5: nummers 2 en 3 op de knopjes als losse badge */
+.mock .knopjes span.nr { position: absolute; right: -6px; top: -8px; width: 22px; height: 22px; border-radius: 11px; background: var(--feestgoud); color: var(--donkerrood); font-size: 12px; font-weight: 800; }
+
+/* Envelop: één doorlopende animatie */
+.env-tekst { transition: opacity .35s ease; }
+.env-tekst.weg { opacity: 0; }
+.env-tikhint { font-size: 16px; font-weight: 700; color: #FBE7DA; transition: opacity .3s ease; }
+.env-tikhint.weg { opacity: 0; }
+.verschijn { animation: verschijn .45s ease both; }
+@keyframes verschijn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* Dossier open: groeit mee met de tekst, doelwit en woord apart en duidelijk */
+.dossier2.toon .ds2-map { height: auto; min-height: 204px; }
+.ds2-open { position: relative; gap: 14px; padding: 18px 18px 16px; overflow: visible; }
+.dossier2.toon .ds2-open { animation: openklap 320ms cubic-bezier(.2,.9,.3,1) both; }
+.ds2-tekst { font-size: 20px; line-height: 1.35; }
+.ds2-open .ds-grid.een { grid-template-columns: 1fr; }
+.ds2-open .ds-grid > div { gap: 4px; padding: 10px 12px; }
+.ds2-open .ds-doel { background: #3A3020; border: 1px solid rgba(212,178,106,.55); }
+.ds2-open .ds-doel b { font-size: 18px; color: #F3D58E; }
+.ds2-uitleg { font-size: 14px; line-height: 1.45; }
+mark.ds-nadruk { background: none; color: #F3D58E; border-bottom: 2px solid rgba(212,178,106,.7); }

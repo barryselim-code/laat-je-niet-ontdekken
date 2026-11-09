@@ -149,7 +149,7 @@ const LOGO = `<svg class="logo" viewBox="0 0 100 100" role="img" aria-label="Log
 
 // ---------- render ----------
 function render() {
-  if (S.vasthouden) { S.renderWacht = true; return; }
+  if (S.vasthouden || S.envAnim) { S.renderWacht = true; return; }
   const views = { laden: vLaden, home: vHome, nieuw: vNieuw, deelnemen: vDeelnemen, speluitleg: vSpeluitleg, overname: vOvernameWacht, sessie: vSessie, weg: vWeg };
   const ae = document.activeElement, focusId = ae && ae.id;
   const sel = focusId && ae.selectionStart != null ? [ae.selectionStart, ae.selectionEnd] : null;
@@ -429,9 +429,7 @@ function vEnvelop() {
   const me = ik();
   return `<main class="envelop-scherm ${donker ? 'donker' : ''}">
     <div class="stippen-laag stippen" aria-hidden="true"></div>
-    <div class="env-tekst"><span class="k">${donker ? `${esc(S.sessie.naam)} · ${esc(S.sessie.code)}` : 'De opdrachten zijn uitgedeeld'}</span>
-      <h1>${donker ? 'Alleen voor jouw ogen' : 'Je dossier is binnen'}</h1>
-      <p>${donker ? 'Het papier is beslagen. Kijk erdoorheen zolang je je vinger erop houdt.' : 'Iedereen aan tafel krijgt er nu een. Niet bij je buren kijken!'}</p></div>
+    <div class="env-tekst">${envTekst(donker)}</div>
     <div class="dmap ${open ? 'open' : ''} ${uit ? 'uit' : ''}">
       <svg class="dmap-achter" width="300" height="230" viewBox="0 0 300 230" aria-hidden="true"><defs><linearGradient id="mo-kd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#C9A464"/><stop offset="1" stop-color="#A9844A"/></linearGradient></defs>
         <path d="M0 24 a10 10 0 0 1 10 -10 h70 l14 14 h196 a10 10 0 0 1 10 10 v182 a10 10 0 0 1 -10 10 h-280 a10 10 0 0 1 -10 -10z" fill="url(#mo-kd)"/></svg>
@@ -452,9 +450,34 @@ function vEnvelop() {
     </div>
     <div style="flex-grow:1"></div>
     <div style="position:relative;width:100%;max-width:432px;display:flex;flex-direction:column;align-items:center;gap:12px">
-      ${!open ? '<span style="font-size:16px;font-weight:700;color:#FBE7DA">Tik op de paperclip</span>' : ''}
-      ${donker ? '<button class="btn goud" data-a="naar-missie">Begrepen, aan de slag</button>' : ''}
+      ${!open ? '<span class="env-tikhint">Tik op de paperclip</span>' : ''}
+      ${donker ? ENV_KNOP : ''}
     </div></main>`;
+}
+const ENV_KNOP = '<button class="btn goud" data-a="naar-missie">Begrepen, aan de slag</button>';
+function envTekst(donker) {
+  return `<span class="k">${donker ? `${esc(S.sessie.naam)} · ${esc(S.sessie.code)}` : 'De opdrachten zijn uitgedeeld'}</span>
+      <h1>${donker ? 'Alleen voor jouw ogen' : 'Je dossier is binnen'}</h1>
+      <p>${donker ? 'Het papier is beslagen. Kijk erdoorheen zolang je je vinger erop houdt.' : 'Iedereen aan tafel krijgt er nu een. Niet bij je buren kijken!'}</p>`;
+}
+// Envelop openen als één doorlopende animatie op de bestaande elementen (geen nieuwe schermen tussendoor)
+function openEnvelop() {
+  const scherm = document.querySelector('.envelop-scherm'), map = scherm?.querySelector('.dmap');
+  tril(TRIL.tik);
+  if (!scherm || !map) { S.envelop = 'donker'; render(); return; }
+  S.envAnim = true; S.envelop = 'open';
+  map.querySelector('.dmap-tik')?.remove(); map.querySelector('.dmap-puls')?.remove();
+  scherm.querySelector('.env-tikhint')?.classList.add('weg');
+  requestAnimationFrame(() => map.classList.add('open'));
+  setTimeout(() => { S.envelop = 'uit'; map.classList.add('uit'); }, 950);
+  setTimeout(() => { S.envelop = 'donker'; scherm.classList.add('donker'); scherm.querySelector('.env-tekst')?.classList.add('weg'); }, 1900);
+  setTimeout(() => {
+    const t = scherm.querySelector('.env-tekst'); if (t) { t.innerHTML = envTekst(true); t.classList.remove('weg'); }
+    const pap = scherm.querySelector('#envpapier'); if (pap) { pap.classList.add('leesbaar'); pap.tabIndex = 0;
+      const h = pap.querySelector('.dmap-hint'); if (h) h.textContent = 'Houd je vinger op het papier om de wasem weg te vegen'; }
+    const voet = scherm.querySelector('.env-tikhint')?.parentElement; if (voet) { scherm.querySelector('.env-tikhint')?.remove(); voet.insertAdjacentHTML('beforeend', ENV_KNOP); voet.lastElementChild.classList.add('verschijn'); }
+  }, 2300);
+  setTimeout(() => { S.envAnim = false; S.renderWacht = false; render(); }, 3000);
 }
 
 // ----- spel -----
@@ -519,6 +542,15 @@ function vBetrapGrid() {
       return `<div class="bk ${p.ontmaskerd ? 'grijs' : ''}"><span class="bk-i">${esc(p.naam[0]?.toUpperCase())}</span><span class="bk-naam">${esc(p.naam)}</span>${knop}</div>`;
     }).join('')}</div></section>`;
 }
+// Doelwit en woord in de opdrachttekst laten opvallen
+function nadruk(tekst, woorden) {
+  let h = esc(tekst || '');
+  for (const w of woorden.filter((x) => x && x.trim().length > 1)) {
+    const e = esc(w).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    h = h.replace(new RegExp(`(^|[^\\p{L}])(${e})(?=$|[^\\p{L}])`, 'giu'), '$1<mark class="ds-nadruk">$2</mark>');
+  }
+  return h;
+}
 const fmtMin = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 
 function vMissieKaart(m) {
@@ -529,9 +561,11 @@ function vMissieKaart(m) {
       <div class="ds2-dicht" aria-hidden="true"><div class="ds-regels"><span>AGENT: ${esc((me?.naam || '').toUpperCase())}</span><span>ONTVANGEN: ${tijd(m.toegewezen_op)}</span></div>
         <div class="ds-midden"><span class="stempel-geheim">GEHEIM</span></div>
         ${m.voltooid && !me?.ontmaskerd ? `<span class="ds2-vink">${I.vink}${tijd(m.voltooid_op)} · +${m.punten}</span>` : ''}</div>
-      <div class="ds2-open"><span class="ds-lbl">OPDRACHT</span><p class="ds2-tekst">${esc(m.tekst)}</p>
-        <span class="ds-lbl">DOELWIT: ${esc((m.doelwit || 'niemand speciaal').toUpperCase())}</span>
-        ${m.uitleg ? `<span class="ds2-uitleg"><span class="ds-lbl">GEFLIKT ALS </span>${esc(m.uitleg)}</span>` : ''}</div>
+      <div class="ds2-open">
+        <div class="ds-veld"><span class="ds-lbl">OPDRACHT</span><p class="ds2-tekst">${nadruk(m.tekst, [m.doelwit, m.woord])}</p></div>
+        <div class="ds-grid ${m.woord ? '' : 'een'}"><div class="${m.doelwit ? 'ds-doel' : ''}"><span class="ds-lbl">DOELWIT</span><b>${esc(m.doelwit || 'Niemand speciaal')}</b></div>
+          ${m.woord ? `<div class="ds-doel"><span class="ds-lbl">WOORD</span><b>${esc(m.woord)}</b></div>` : ''}</div>
+        ${m.uitleg ? `<div class="ds-veld"><span class="ds-lbl">GEFLIKT ALS</span><span class="ds2-uitleg">${esc(m.uitleg)}</span></div>` : ''}</div>
       <div class="ds2-strook" id="leesstrook" tabindex="0" role="button" aria-label="Houd hier vast om je opdracht te lezen"><i class="vulbalk" aria-hidden="true"></i>
         <span class="dicht-t">${I.hand}Houd hier vast om te lezen</span><span class="open-t">${I.hand}Je houdt vast · loslaten = dicht</span></div>
     </div></div>`;
@@ -803,7 +837,7 @@ function tik() {
     const lang = (nu() - new Date(b.laatste_meedoen).getTime()) / 1000 > HOST_SLUIT, key = b.id + b.laatste_meedoen;
     if (lang && !wasNul.has(key + 'lang')) { wasNul.add(key + 'lang'); rerender = true; }
     // W5: wie betrapt is, trilt elke 15 seconden tot hij kiest
-    if (b.beschuldigde_id === ik()?.id && heeftCeremonie() && Date.now() - (tik.gezoemd || 0) >= HERINNER) { tik.gezoemd = Date.now(); tril([300, 120, 300]); }
+    if (b.beschuldigde_id === ik()?.id && heeftCeremonie() && Date.now() - (tik.gezoemd || 0) >= HERINNER) { tik.gezoemd = Date.now(); tril(TRIL.betrapt); }
   }
   document.querySelectorAll('[data-jokertot]').forEach((e) => { const ms = Number(e.dataset.jokertot) - nu(); if (ms <= 0) rerender = true; else e.textContent = e.dataset.min ? String(Math.max(1, Math.ceil(ms / 60000))) : fmtMin(ms); });
   document.querySelectorAll('[data-tijdblok]').forEach((e) => { const ms = Number(e.dataset.tijdblok) - nu(); e.classList.toggle('rood', ms < 5 * 60000); const bk = e.querySelector('[data-tijdbalk]'); if (bk) bk.style.width = Math.min(100, Math.max(0, 100 - (ms / SPELDUUR) * 100)) + '%'; });
@@ -812,6 +846,8 @@ function tik() {
   if (rerender) return render();
   tikTimer = setTimeout(tik, 250);
 }
+// Korte trillingen (< 100 ms) voel je op veel telefoons nauwelijks; daarom langere patronen.
+const TRIL = { tik: 160, melding: [350, 120, 350], betrapt: [600, 150, 600, 150, 600] };
 function tril(p) { try { navigator.vibrate?.(p); } catch {} }
 
 // ---------- sessie laden en realtime ----------
@@ -868,8 +904,8 @@ function meldingen(nieuw) {
   for (const b of nieuw) {
     const was = oud.get(b.id);
     if (b.status === 'open') {
-      if (!S.gezien.has(b.id) && b.beschuldigde_id !== me.id && !doetMee(b.id) && !S.eersteLaad && !S.sheet) { S.sheet = { type: 'melding', id: b.id }; tril(120); }
-      if (b.beschuldigde_id === me.id && !S.gezien.has(b.id)) { tril([300, 120, 300]); tik.gezoemd = Date.now(); }
+      if (!S.gezien.has(b.id) && b.beschuldigde_id !== me.id && !doetMee(b.id) && !S.eersteLaad && !S.sheet) { S.sheet = { type: 'melding', id: b.id }; tril(TRIL.melding); }
+      if (b.beschuldigde_id === me.id && !S.gezien.has(b.id)) { tril(TRIL.betrapt); tik.gezoemd = Date.now(); }
       S.gezien.add(b.id);
     } else if (was && was.status === 'open' && b.status !== 'vervallen' && !S.gezien.has(b.id + ':uit')) {
       const d = S.deel.filter((x) => x.beschuldiging_id === b.id);
@@ -933,9 +969,6 @@ function bonk() {
     o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + 0.3);
   } catch {}
 }
-function gouden_flits() {
-  const f = document.createElement('div'); f.className = 'goudflits'; document.body.appendChild(f); setTimeout(() => f.remove(), 700);
-}
 
 // ---------- feest bij onthulling ----------
 function feest(groot) {
@@ -991,19 +1024,19 @@ const ACTIES = {
   stopscan: () => stopScan(),
   'uitleg-volgende': () => { S.uitlegStap++; window.scrollTo(0, 0); },
   'uitleg-klaar': () => { S.uitlegStap = 5; S.envelop = 'dicht'; window.scrollTo(0, 0); },
-  zegel: () => { if (S.envelop !== 'dicht') return; S.envelop = 'open'; tril(60); setTimeout(() => { if (S.envelop === 'open') { S.envelop = 'uit'; render(); } }, 800); setTimeout(() => { if (S.envelop === 'uit') { S.envelop = 'donker'; render(); } }, 1700); },
+  zegel: () => { if (S.envelop !== 'dicht' || S.envAnim) return; openEnvelop(); },
   'naar-missie': () => { ls.set(ceremonieKey(), true); },
   start: () => doe(() => rpc('start_spel', { p_sessie: S.sid })),
   menu: () => { S.sheet = { type: 'menu' }; },
   voltooid: () => { S.sheet = { type: 'voltooid', getuigen: [] }; },
   getuige: (el) => { const g = S.sheet.getuigen, id = el.dataset.id; S.sheet.getuigen = g.includes(id) ? g.filter((x) => x !== id) : [...g, id]; },
-  'voltooid-ok': () => doe(async () => { await rpc('markeer_voltooid', { p_sessie: S.sid, p_getuigen: S.sheet.getuigen }); S.sheet = null; gouden_flits(); tril(40); await laadMissie(); }),
+  'voltooid-ok': () => doe(async () => { await rpc('markeer_voltooid', { p_sessie: S.sid, p_getuigen: S.sheet.getuigen }); S.sheet = null; await laadMissie(); }),
   'voltooid-ongedaan': () => doe(async () => { await rpc('markeer_voltooid', { p_sessie: S.sid, p_getuigen: [], p_ongedaan: true }); await laadMissie(); }),
   'nieuwe-opdracht': () => { S.sheet = { type: 'nieuwe-opdracht' }; },
   'nieuwe-opdracht-ok': () => doe(async () => { await rpc('nieuwe_opdracht', { p_sessie: S.sid }); S.sheet = null; await laadMissie(); toast('Nieuwe opdracht', 'Je vorige is veilig. Houd je dossier vast om de nieuwe te lezen.', 4000); }),
   joker: () => { S.sheet = { type: 'joker' }; },
   'joker-ok': () => doe(async () => { await rpc('gebruik_joker', { p_sessie: S.sid }); S.sheet = null; await laadMissie(); toast('Nieuwe opdracht', 'Houd je kaart vast om hem te lezen.', 3500); }),
-  betrap: (el) => doe(async () => { const r = await rpc('beschuldig', { p_sessie: S.sid, p_beschuldigde: el.dataset.id }); tril(40); await laadNu(); S.sheet = { type: 'open-besch', id: r.beschuldiging_id }; }),
+  betrap: (el) => doe(async () => { const r = await rpc('beschuldig', { p_sessie: S.sid, p_beschuldigde: el.dataset.id }); tril(TRIL.tik); await laadNu(); S.sheet = { type: 'open-besch', id: r.beschuldiging_id }; }),
   meedoen: (el) => doe(async () => { await rpc('meedoen', { p_beschuldiging: el.dataset.id }); await laadNu(); S.sheet = { type: 'open-besch', id: el.dataset.id }; }),
   'open-besch': (el) => { S.sheet = { type: 'open-besch', id: el.dataset.id }; },
   kies: (el) => { S.bevestig = { id: el.dataset.id, val: el.dataset.val }; },
@@ -1022,7 +1055,7 @@ const ACTIES = {
   verlaat: () => { S.sheet = { type: 'verlaat' }; },
   'verlaat-ok': () => doe(async () => { await rpc('verlaat_sessie', { p_sessie: S.sid }); S.sheet = null; verlaat(); }),
   'beeindig-ok': () => doe(async () => { await rpc('beeindig_spel', { p_sessie: S.sid }); S.sheet = null; }),
-  'toch-raak': (el) => doe(async () => { await rpc('host_toch_raak', { p_beschuldiging: el.dataset.id, p_raak: el.dataset.val === 'ja' }); if (el.dataset.val === 'ja') { bonk(); tril(60); } await laadNu(); }),
+  'toch-raak': (el) => doe(async () => { await rpc('host_toch_raak', { p_beschuldiging: el.dataset.id, p_raak: el.dataset.val === 'ja' }); if (el.dataset.val === 'ja') { bonk(); tril(TRIL.tik); } await laadNu(); }),
   'onthul-volgende': () => doe(() => rpc('onthul_stap', { p_sessie: S.sid, p_vooruit: true })),
   'onthul-vorige': () => doe(() => rpc('onthul_stap', { p_sessie: S.sid, p_vooruit: false })),
   'nieuwe-ronde': () => doe(() => rpc('nieuwe_ronde', { p_sessie: S.sid })),
@@ -1147,7 +1180,7 @@ function b64urlNaarBytes(b64) {
 async function pushAan() {
   if (!pushKan()) { toast('Meldingen werken hier niet', 'Op een iPhone werkt het alleen als de app op je beginscherm staat.', 6000); return; }
   try { if ((await Notification.requestPermission()) !== 'granted') { toast('Meldingen staan uit', 'Je kunt ze later aanzetten in de instellingen van je telefoon.', 5000); return; } } catch { return; }
-  tril(60); await pushKoppel();
+  tril(TRIL.tik); await pushKoppel();
 }
 async function pushKoppel() {
   if (!S.sid || !CFG.vapidPublicKey || pushStatus() !== 'granted') return;
@@ -1159,7 +1192,7 @@ async function pushKoppel() {
   } catch (e) { console.warn('push', e); }
 }
 // Een melding terwijl de app open is: alleen trillen (de service worker stuurt dit door)
-navigator.serviceWorker?.addEventListener?.('message', (ev) => { if (ev.data?.soort === 'tril') { tril(ev.data.patroon || [200, 100, 200]); planLaad(); } });
+navigator.serviceWorker?.addEventListener?.('message', (ev) => { if (ev.data?.soort === 'tril') { tril(ev.data.patroon || TRIL.betrapt); planLaad(); } });
 
 // ---------- W13: terugknop sluit de app niet ----------
 let terugKlaar = false;
