@@ -1,0 +1,21 @@
+# Zet missies.json automatisch in de database zodra het bestand verandert.
+# Toont alleen aantallen, nooit missieteksten.
+name: Missies importeren
+on:
+  push:
+    branches: [main]
+    paths: [missies.json]
+  workflow_dispatch:
+jobs:
+  importeren:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wachten tot GitHub het nieuwe bestand serveert
+        run: sleep 45
+      - name: Importeren in Supabase
+        run: |
+          KEY=$(grep -o "eyJ[^']*" <<< "$(curl -fsS https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/config.js)")
+          URL=https://tvvfarjafpbaguxfutyz.supabase.co
+          RES=$(curl -sS -X POST "$URL/rest/v1/rpc/ververs_missies" -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{}')
+          echo "Resultaat (alleen aantallen): $RES"
+          echo "$RES" | grep -q '"geimporteerd"' || exit 1

@@ -2,7 +2,7 @@
 
 Installeerbare web-app (PWA) waarin iedereen aan tafel een geheime missie krijgt. De app draait op GitHub Pages; Supabase is de backend (database, realtime en anonieme login).
 
-**De missies staan nooit in deze repository.** Ze gaan via de beheerpagina rechtstreeks en versleuteld de database in.
+De missies staan in `missies.json` in deze repository. **Open dat bestand niet als je zelf meespeelt.** Zodra het verandert, haalt de database het automatisch op (GitHub Action *Missies importeren*) en slaat het versleuteld op. Handmatig opnieuw importeren kan via Actions › Missies importeren › Run workflow.
 
 ## Wat zit erin (MVP voor kerst)
 
@@ -38,15 +38,9 @@ Installeerbare web-app (PWA) waarin iedereen aan tafel een geheime missie krijgt
 4. Settings › Pages › Source: *Deploy from a branch*, branch `main`, map `/ (root)`.
 5. Na een minuut staat de app op `https://<jouw-gebruikersnaam>.github.io/laat-je-niet-ontdekken/`.
 
-### 3. Missies importeren (zonder ze te zien)
+### 3. Missies erin zetten
 
-1. Open `https://<jouw-gebruikersnaam>.github.io/laat-je-niet-ontdekken/beheer.html`.
-2. Vul je beheercode in en kies `missies.json`.
-3. De pagina toont alleen aantallen en controles (per thema, categorie, moeilijkheid; of er iets gecodeerd lijkt). Klik op Importeren.
-
-Het bestand mag gewone JSON zijn, of base64; losse velden in base64 worden ook herkend. Een lijst met missies of `{ "missies": [...], "woorden": [...] }`. Missies met `{woord}` worden pas uitgedeeld als er een woordenlijst is meegegeven.
-
-**Zet `missies.json` nooit in de repository.** Het staat in `.gitignore`. Open in Supabase nooit het schema `geheim`; de teksten zijn daar versleuteld, maar met de sleutel in dezelfde database.
+Zet `missies.json` in de hoofdmap van deze repository (Add file › Upload files). De GitHub Action *Missies importeren* zet ze binnen een minuut in de database; onder Actions zie je alleen aantallen. Alternatief zonder GitHub: `beheer.html` met je beheercode.
 
 ### 4. Installeren op telefoons
 
@@ -73,5 +67,7 @@ Pas bij een nieuwe versie in `sw.js` de regel `const VERSIE = 'tafelagent-v1'` a
 | `sw.js`, `manifest.webmanifest`, `icons/` | Installeerbaar en offline-schil |
 | `lib/qrcode.js` | QR-code maken (MIT-licentie, Kazuhiko Arase) |
 | `supabase/schema.sql` | Tabellen, beveiliging (RLS), realtime en alle spelregels als databasefuncties |
+| `supabase/import_van_github.sql` | Laat de database `missies.json` zelf ophalen en importeren |
+| `.github/workflows/missies.yml` | Start die import automatisch als `missies.json` verandert |
 
 Alle spelregels worden op de server afgedwongen: de app kan geen missies van anderen lezen, geen wachttijd overslaan en geen punten zelf toekennen.
