@@ -116,6 +116,7 @@ const I = {
   duimNeer: svg('<path d="M7 13V4H4v9zM7 13l4 7c1.4 0 2.3-1 2-2.4L12.5 14H18a2 2 0 0 0 2-2.3l-1.1-6A2 2 0 0 0 17 4H7"/>'),
   kroon: svg('<path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"/>', 1.6),
   masker: svg('<path d="M3 7c3-1 6-1 9 1 3-2 6-2 9-1 0 6-2.5 10-5.5 10-1.6 0-2.5-1.5-3.5-1.5S10.1 17 8.5 17C5.5 17 3 13 3 7z"/><circle cx="8.3" cy="10.5" r="1.2"/><circle cx="15.7" cy="10.5" r="1.2"/>'),
+  geluid: svg('<path d="M11 5 6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7"/><path d="M18.5 5.5a9 9 0 0 1 0 13"/>'),
   bel: svg('<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>'),
   belUit: svg('<path d="M6 8a6 6 0 0 1 9.3-5M18 8c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0M2 2l20 20"/>', 2),
   verbod: svg('<circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/>'),
@@ -303,7 +304,7 @@ function vSpeluitleg() {
 function vSessie() {
   const s = S.sessie;
   if (!s) return vLaden();
-  if (s.status === 'lobby') return toestemmingVragen() ? vToestemming() : vLobby();
+  if (s.status === 'lobby') return toestemmingVragen() ? vToestemming() : geluidVragen() ? vGeluidVraag() : vLobby();
   if (s.status === 'spel') {
     if (!heeftCeremonie()) return S.uitlegStap < 5 ? vUitleg() : vEnvelop();
     return vSpel();
@@ -323,6 +324,19 @@ function vToestemming() {
     <div class="foot" style="padding:0 24px 32px"><button class="btn rood" data-a="meldingen-aan">Ja, waarschuw me</button>
       <button class="btn ghost klein" data-a="meldingen-later">Liever niet</button>
       <span class="ts-noot">Op een iPhone werkt dit alleen als Betrapt! op je beginscherm staat (Deel › Zet op beginscherm).</span></div></main>`;
+}
+
+const geluidVragen = () => ls.get('geluid') == null;
+function vGeluidVraag() {
+  return `<main class="screen licht toestemming">
+    <div class="ts-midden"><div class="ts-bel"><span class="ts-ico">${I.geluid}</span><span class="ts-stempel">BZZZT!</span></div>
+      <h1>Mag Betrapt! geluid maken?</h1>
+      <p>Druk je op <b>Betrapt!</b>, dan klinkt er een korte zoemer op jouw telefoon. Alleen bij jou, niet bij de anderen. Bij de onthulling hoor je de stempels en een feestje.</p>
+      <div class="ts-kaart"><span><b>Zet het volume van je telefoon wat hoger.</b> Dat kan de app niet zelf.</span>
+        <span><b>iPhone op stil?</b> De geluiden van Betrapt! spelen dan toch.</span></div></div>
+    <div class="foot" style="padding:0 24px 32px"><button class="btn rood" data-a="geluid-aan">Ja, geluid aan</button>
+      <button class="btn ghost klein" data-a="geluid-uit">Liever stil</button>
+      <span class="ts-noot">Je kunt dit later aanpassen in het menu (⋯).</span></div></main>`;
 }
 
 function hostBanners() {
@@ -753,6 +767,7 @@ function vSheet() {
     inner = `<h2>Menu</h2>
       <button class="btn klein" data-a="speluitleg">${I.vraag}Spelregels</button>
       ${pushKan() && pushStatus() !== 'granted' ? `<button class="btn klein" data-a="meldingen-aan">Meldingen aanzetten</button>` : ''}
+      <button class="btn klein" data-a="geluid-wissel" aria-pressed="${geluidAan()}">${I.geluid}Geluid ${geluidAan() ? 'uitzetten' : 'aanzetten'}</button>
       ${host ? `${stil.map((b) => `<button class="btn klein" data-a="host-sluit" data-id="${b.id}">${esc(naam(b.beschuldigde_id))} reageert niet: sluit als Mooi niet!</button>`).join('')}
         <span class="k" style="margin-top:6px">Spelers (host)</span>
         <div class="menu-spelers">${actief().filter((p) => p.id !== echteIk()?.id).map((p) => `<button class="pick" data-a="spelermenu" data-id="${p.id}">${esc(p.naam)}</button>`).join('')}</div>
@@ -959,16 +974,51 @@ function verlaat(msg) {
   render();
 }
 
-// ---------- stempel-bonk (alleen tv/host) ----------
-function bonk() {
+// ---------- geluid ----------
+// Eén AudioContext met een harde hoofdregelaar en een compressor (luid zonder kraken).
+// Volume van de telefoon zelf kan een webapp niet aanpassen; op iPhone speelt dit wel als hij op stil staat.
+const geluidAan = () => ls.get('geluid') === 'aan';
+let AC = null, MASTER = null;
+function audio() {
+  if (!geluidAan()) return null;
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)(), t = ctx.currentTime;
-    const o = ctx.createOscillator(), g = ctx.createGain();
-    o.type = 'sine'; o.frequency.setValueAtTime(140, t); o.frequency.exponentialRampToValueAtTime(48, t + 0.18);
-    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.5, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.28);
-    o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + 0.3);
+    if (!AC) {
+      try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
+      AC = new (window.AudioContext || window.webkitAudioContext)();
+      const comp = AC.createDynamicsCompressor();
+      comp.threshold.value = -14; comp.knee.value = 8; comp.ratio.value = 6; comp.attack.value = 0.003; comp.release.value = 0.15;
+      MASTER = AC.createGain(); MASTER.gain.value = 1.8;
+      MASTER.connect(comp).connect(AC.destination);
+    }
+    if (AC.state === 'suspended') AC.resume();
+    return AC;
+  } catch { return null; }
+}
+function toon(ctx, { type = 'sine', f1, f2, t = 0, duur = 0.3, piek = 0.6, filter }) {
+  const o = ctx.createOscillator(), g = ctx.createGain(), s = ctx.currentTime + t;
+  o.type = type; o.frequency.setValueAtTime(f1, s); if (f2) o.frequency.exponentialRampToValueAtTime(f2, s + duur * 0.8);
+  g.gain.setValueAtTime(0.0001, s); g.gain.exponentialRampToValueAtTime(piek, s + 0.012); g.gain.setValueAtTime(piek, s + duur * 0.55);
+  g.gain.exponentialRampToValueAtTime(0.0001, s + duur);
+  let uit = g;
+  if (filter) { const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = filter; g.connect(lp); uit = lp; }
+  o.connect(g); uit.connect(MASTER); o.start(s); o.stop(s + duur + 0.05);
+}
+// Stempel-bonk (onthulling)
+function bonk() {
+  const ctx = audio(); if (!ctx) return;
+  try { toon(ctx, { f1: 150, f2: 45, duur: 0.32, piek: 0.95 }); toon(ctx, { type: 'triangle', f1: 90, f2: 40, duur: 0.22, piek: 0.5 }); } catch {}
+}
+// Zoemer bij Betrapt! (alleen op de telefoon van wie drukt): kort spelshow-geluid
+function zoemer() {
+  const ctx = audio(); if (!ctx) return;
+  try {
+    toon(ctx, { type: 'sawtooth', f1: 146, duur: 0.42, piek: 0.32, filter: 1400 });
+    toon(ctx, { type: 'square', f1: 151, duur: 0.42, piek: 0.18, filter: 1100 });
+    toon(ctx, { type: 'sine', f1: 73, duur: 0.42, piek: 0.4 });
   } catch {}
 }
+// Ontgrendel het geluid bij elke tik (iPhone/Chrome spelen pas na een aanraking)
+document.addEventListener('pointerdown', () => { if (geluidAan() && (!AC || AC.state !== 'running')) audio(); }, { capture: true, passive: true });
 
 // ---------- feest bij onthulling ----------
 function feest(groot) {
@@ -981,14 +1031,9 @@ function feest(groot) {
     box.appendChild(c);
   }
   document.body.appendChild(box); setTimeout(() => box.remove(), 5000);
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    (groot ? [523.25, 659.25, 783.99, 1046.5] : [392, 523.25]).forEach((f, i) => {
-      const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime + i * 0.12;
-      o.type = 'triangle'; o.frequency.value = f;
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.2, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
-      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + 0.7);
-    });
+  const ctx = audio();
+  if (ctx) try {
+    (groot ? [523.25, 659.25, 783.99, 1046.5] : [392, 523.25]).forEach((f, i) => toon(ctx, { type: 'triangle', f1: f, t: i * 0.12, duur: 0.6, piek: 0.5 }));
   } catch {}
 }
 
@@ -1036,7 +1081,8 @@ const ACTIES = {
   'nieuwe-opdracht-ok': () => doe(async () => { await rpc('nieuwe_opdracht', { p_sessie: S.sid }); S.sheet = null; await laadMissie(); toast('Nieuwe opdracht', 'Je vorige is veilig. Houd je dossier vast om de nieuwe te lezen.', 4000); }),
   joker: () => { S.sheet = { type: 'joker' }; },
   'joker-ok': () => doe(async () => { await rpc('gebruik_joker', { p_sessie: S.sid }); S.sheet = null; await laadMissie(); toast('Nieuwe opdracht', 'Houd je kaart vast om hem te lezen.', 3500); }),
-  betrap: (el) => doe(async () => { const r = await rpc('beschuldig', { p_sessie: S.sid, p_beschuldigde: el.dataset.id }); tril(TRIL.tik); await laadNu(); S.sheet = { type: 'open-besch', id: r.beschuldiging_id }; }),
+  betrap: (el) => { zoemer(); return ACTIES.betrap2(el); },
+  betrap2: (el) => doe(async () => { const r = await rpc('beschuldig', { p_sessie: S.sid, p_beschuldigde: el.dataset.id }); tril(TRIL.tik); await laadNu(); S.sheet = { type: 'open-besch', id: r.beschuldiging_id }; }),
   meedoen: (el) => doe(async () => { await rpc('meedoen', { p_beschuldiging: el.dataset.id }); await laadNu(); S.sheet = { type: 'open-besch', id: el.dataset.id }; }),
   'open-besch': (el) => { S.sheet = { type: 'open-besch', id: el.dataset.id }; },
   kies: (el) => { S.bevestig = { id: el.dataset.id, val: el.dataset.val }; },
@@ -1061,7 +1107,10 @@ const ACTIES = {
   'nieuwe-ronde': () => doe(() => rpc('nieuwe_ronde', { p_sessie: S.sid })),
   afsluiten: () => verlaat(),
   'meldingen-aan': () => { ls.set('meldingen.gevraagd', true); S.sheet = null; pushAan().then(render); },
-  'meldingen-later': () => { ls.set('meldingen.gevraagd', true); S.sheet = null; },  scorebord: () => doe(() => rpc('naar_scorebord', { p_sessie: S.sid })),
+  'meldingen-later': () => { ls.set('meldingen.gevraagd', true); S.sheet = null; },
+  'geluid-aan': () => { ls.set('geluid', 'aan'); audio(); zoemer(); },
+  'geluid-uit': () => { ls.set('geluid', 'uit'); },
+  'geluid-wissel': () => { if (geluidAan()) ls.set('geluid', 'uit'); else { ls.set('geluid', 'aan'); audio(); zoemer(); } },  scorebord: () => doe(() => rpc('naar_scorebord', { p_sessie: S.sid })),
   'missies-terug': () => { S.sheet = { type: 'missies' }; },
   'test-als': (el) => doe(async () => {
     if (el.dataset.id === ik()?.id) return;

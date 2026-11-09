@@ -1,5 +1,5 @@
 // Service worker: app-schil offline beschikbaar, data altijd live via Supabase.
-const VERSIE = 'ljno-v14';
+const VERSIE = 'ljno-v15';
 const SCHIL = ['./', 'index.html', 'app.css', 'app.js', 'config.js', 'lib/qrcode.js', 'manifest.webmanifest',
   'icons/logo-v4.svg', 'icons/logo-v4-32.png', 'icons/logo-v4-192.png', 'icons/logo-v4-512.png', 'icons/logo-v4-apple-touch.png', 'favicon.ico'];
 
