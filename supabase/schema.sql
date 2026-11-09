@@ -612,6 +612,7 @@ begin
     'voltooid', t.voltooid_op is not null,
     'voltooid_op', t.voltooid_op,
     'getuige_id', t.getuige_id,
+    'doelwit', (select x.naam from public.spelers x where x.id = t.doelwit_id),
     'ontmaskerd', v.ontmaskerd,
     'joker_gebruikt', t.joker_gebruikt,
     'joker_tot', t.eerste_toewijzing + interval '10 minutes',

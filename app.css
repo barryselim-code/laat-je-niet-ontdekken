@@ -1,4 +1,4 @@
-/* Laat je niet ontdekken! – stijl volgens het schermontwerp (9 nov 2026)
+/* Betrapt! – stijl volgens het schermontwerp, versie 'speelser' (9 nov 2026)
    Feestelijk begin en einde (crème/kerstrood/goud), discreet donker midden. */
 :root {
   /* spel (donker) */
@@ -10,7 +10,7 @@
   /* start (licht) */
   --creme: #FBF3E4; --creme2: #F1E4CF; --kerstrood: #B3262E; --kerstrood-d: #8E1C23; --den: #1F5C45;
   --feestgoud: #E9C774; --feestrood: #5E1519; --ink: #2A1A14; --ink2: #6B5A4E; --rand: #E3D3BE; --rand2: #EFE2CD; --donkerrood: #3A0C0F;
-  --serif: 'DM Serif Display', Georgia, serif;
+  --serif: 'Bricolage Grotesque', Inter, system-ui, sans-serif; --typ: 'Special Elite', 'Courier New', monospace; --stempel: 'Black Ops One', Impact, sans-serif;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -408,3 +408,244 @@ body.testmodus { padding-top: 48px; }
 .testbalk button.aan { background: #fff; color: #3B2A6B; border-color: #fff; }
 body.testmodus .accused, body.testmodus .uitslag, body.testmodus .scrim { top: 48px; }
 body.testmodus .screen, body.testmodus .feest, body.testmodus .envelop-scherm { min-height: calc(100dvh - 48px); }
+
+/* ===================== versie 'speelser' ===================== */
+/* typografie: Bricolage 800 voor titels, Special Elite voor dossiertekst, Black Ops One voor stempels */
+.titel-serif, .home-hero h1, .lobby-kaart .naam-avond, .sectie h2, .env-tekst h1, .speluitleg h1, .feest .grote-naam,
+.topkaart h2, .sheet h2, .accused h2, .uitslag h2, .spelers-kop h1, .voltooid-kaart h2, .feest .citaat { font-family: var(--serif); font-weight: 800; letter-spacing: -.5px; }
+.typ { font-family: var(--typ); }
+.speluitleg h2 { font-family: var(--serif); font-weight: 800; font-size: 22px; }
+
+/* 3D-knoppen */
+.btn { transition: transform .08s ease, box-shadow .08s ease; }
+.btn.rood { box-shadow: 0 5px 0 #7E1A20; }
+.btn.groen-rand { background: #fff; box-shadow: 0 5px 0 var(--den); }
+.btn.goud { box-shadow: 0 5px 0 #8C7340; font-family: var(--serif); font-weight: 800; font-size: 18px; }
+.btn.fk { box-shadow: 0 5px 0 #A8843A; }
+.btn.toegeven { box-shadow: 0 5px 0 #7E2A22; }
+.btn.licht-knop { box-shadow: 0 5px 0 #8E8A82; }
+.btn.groot { height: 64px; font-family: var(--serif); font-weight: 800; font-size: 21px; border-radius: 16px; }
+.btn:not(:disabled):active { transform: translateY(4px); box-shadow: none; }
+.btn:disabled { box-shadow: none; }
+.accused .btn:disabled { background: var(--s1); border-color: var(--s1); color: #6C727A; opacity: 1; font-family: inherit; font-weight: 600; font-size: 16px; }
+
+/* home */
+.home-hero h1 { margin: 2px 0 0; font-size: 92px; line-height: .95; letter-spacing: -3px; color: var(--creme); text-shadow: 0 6px 0 #7E1A20, 0 14px 28px rgba(0,0,0,.3);
+  transform: rotate(-5deg); animation: klap-titel 700ms cubic-bezier(.2,.9,.3,1.2) 1 both; }
+.home-hero .logo { animation: zweef 4s ease-in-out infinite; }
+.label-feest { font-weight: 800; box-shadow: 0 3px 0 #A8843A; animation: kantel 3s ease-in-out infinite; display: inline-block; }
+@keyframes zweef { 0%,100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-8px) rotate(3deg); } }
+@keyframes klap-titel { 0% { transform: scale(2.4) rotate(-14deg); opacity: 0; } 55% { transform: scale(.92) rotate(-5deg); opacity: 1; } 75% { transform: scale(1.04) rotate(-5deg); } 100% { transform: scale(1) rotate(-5deg); } }
+@keyframes kantel { 0%,100% { transform: rotate(-3deg); } 50% { transform: rotate(3deg); } }
+.lobby-kaart .naam-avond { font-size: 24px; }
+.sectie h2 { font-size: 24px; }
+
+/* stempels */
+.stempel-geheim { padding: 8px 22px 6px; border: 4px solid #C9483D; border-radius: 10px; font-family: var(--stempel); font-size: 44px; line-height: 1; letter-spacing: 4px; color: #C9483D;
+  transform: rotate(-9deg); opacity: .9; box-shadow: inset 0 0 0 2px rgba(201,72,61,.35); }
+.stempel-geheim.mini { align-self: center; font-size: 22px; padding: 5px 12px 3px; border-width: 3px; }
+.stempel { position: absolute; left: 50%; top: 50%; padding: 10px 0 6px; width: 260px; margin-left: -130px; margin-top: -32px; text-align: center; border: 5px solid var(--sk, #C2372C); border-radius: 12px;
+  font-family: var(--stempel); font-size: 44px; line-height: 1; letter-spacing: 3px; color: var(--sk, #C2372C); transform: rotate(-10deg); white-space: nowrap; }
+@keyframes klap { 0% { transform: scale(2.6) rotate(-24deg); opacity: 0; } 55% { transform: scale(.9) rotate(-10deg); opacity: .95; } 72% { transform: scale(1.05) rotate(-10deg); } 100% { transform: scale(1) rotate(-10deg); opacity: .92; } }
+@keyframes tril { 0%,100% { transform: translate(0,0); } 20% { transform: translate(-4px,2px); } 40% { transform: translate(4px,-2px); } 60% { transform: translate(-3px,1px); } 80% { transform: translate(2px,-1px); } }
+@keyframes schud { 0%,100% { transform: translateX(0); } 15% { transform: translateX(-10px) rotate(-1deg); } 30% { transform: translateX(9px) rotate(1deg); } 45% { transform: translateX(-7px); } 60% { transform: translateX(5px); } 75% { transform: translateX(-3px); } }
+@keyframes popin { from { transform: translateY(12px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes adem { 0%,100% { opacity: .55; } 50% { opacity: 1; } }
+@keyframes openklap { 0% { transform: perspective(900px) rotateX(-12deg) translateY(10px); opacity: 0; } 100% { transform: none; opacity: 1; } }
+
+/* dossier (opdrachtkaart) */
+.dossier { flex-grow: 1; min-height: 380px; display: flex; flex-direction: column; touch-action: none; outline: none; position: relative; }
+.dossier:focus-visible .ds-map, .dossier:focus-visible .ds-blad { outline: 2px solid var(--goud); outline-offset: 2px; }
+.dossier.klein { flex-grow: 0; min-height: 230px; }
+.ds-tab { align-self: flex-start; margin-left: 18px; padding: 8px 16px 6px; border-radius: 12px 12px 0 0; background: #3A3226; font-family: var(--typ); font-size: 13px; letter-spacing: 1px; color: #D9CBB0; }
+.ds-open-lbl { display: none; }
+.dossier.toon .ds-open-lbl { display: inline; }
+.ds-map { flex-grow: 1; position: relative; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; gap: 14px; padding: 22px; border-radius: 4px 20px 20px 20px;
+  background: #2B261E; border: 1px solid #3A3226; box-shadow: inset 0 0 0 6px #2F2920, 0 18px 30px rgba(0,0,0,.35); }
+.ds-clip { position: absolute; right: 26px; top: -8px; }
+.ds-regels { display: flex; flex-direction: column; gap: 6px; font-family: var(--typ); font-size: 13px; letter-spacing: 1px; color: #B9AC92; padding-right: 40px; overflow-wrap: anywhere; }
+.ds-midden { display: flex; justify-content: center; }
+.klein .stempel-geheim { font-size: 30px; padding: 6px 16px 4px; border-width: 3px; }
+.ds-onder { display: flex; flex-direction: column; gap: 14px; }
+.ds-risico { display: flex; align-items: center; justify-content: space-between; font-family: var(--typ); font-size: 13px; letter-spacing: 1px; color: #B9AC92; }
+.risico { display: flex; gap: 5px; }
+.risico i { display: block; border-radius: 3px; background: #4A4234; }
+.risico i.aan { background: var(--goud); }
+.ds-hold { display: flex; align-items: center; justify-content: center; gap: 10px; padding-top: 14px; border-top: 1px dashed #4A4234; color: #D9CBB0; font-size: 15px; font-weight: 600; animation: adem 2.4s ease-in-out infinite; }
+.ds-hold svg { width: 22px; height: 22px; }
+.ds-blad { display: none; flex-grow: 1; position: relative; flex-direction: column; gap: 16px; padding: 20px; border-radius: 4px 20px 20px 20px; background: #24211B; border: 1px solid #3A3226; box-shadow: 0 18px 30px rgba(0,0,0,.35); }
+.dossier.toon .ds-map { display: none; }
+.dossier.toon .ds-blad { display: flex; animation: openklap 380ms cubic-bezier(.2,.9,.3,1) both; }
+.ds-geheim-klein { position: absolute; right: 16px; top: 14px; padding: 3px 9px 1px; border: 2.5px solid #C9483D; border-radius: 6px; font-family: var(--stempel); font-size: 15px; letter-spacing: 2px; color: #C9483D; transform: rotate(8deg); opacity: .85; }
+.ds-veld { display: flex; flex-direction: column; gap: 8px; }
+.ds-lbl { font-family: var(--typ); font-size: 11px; letter-spacing: 1.5px; color: #9C8F77; }
+.ds-tekst { margin: 0; font-family: var(--typ); font-size: 23px; line-height: 1.35; color: #F1E8D6; }
+.klein .ds-tekst { font-size: 19px; }
+.ds-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.ds-grid > div { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 12px; background: #2E2A22; min-width: 0; }
+.ds-grid b { font-size: 15px; font-weight: 700; overflow-wrap: anywhere; }
+.ds-r { display: flex; align-items: center; gap: 4px; }
+.ds-r .risico { gap: 4px; }
+.ds-r b { margin-left: 6px; font-size: 13px; color: var(--goud); }
+.ds-uitleg { font-size: 14px; line-height: 1.45; color: #C9C0AE; }
+.ds-voet { display: flex; flex-direction: column; gap: 8px; font-size: 13px; color: #9C8F77; }
+.ds-voet .timer5 { background: #3A3226; }
+.ds-voet .timer5 i { background: #D9CBB0; }
+.dossier.toon .timer5 i { animation: leeg 5s linear forwards; }
+.toon-dim .acties3 { opacity: .35; }
+
+/* actieknoppen in het spel */
+.act { height: 68px; font-family: var(--serif); font-size: 18px; font-weight: 800; box-shadow: 0 4px 0 #15171A; line-height: 1.1; text-align: center; padding: 0 6px; transition: transform .08s, box-shadow .08s; }
+.act.klein-tekst { font-size: 15px; }
+.act.goud { box-shadow: 0 4px 0 #8C7340; }
+.act:not(:disabled):active { transform: translateY(4px); box-shadow: none; }
+.act:disabled { box-shadow: none; }
+.act.goud:active { animation: pop108 .25s ease; }
+@keyframes pop108 { 50% { transform: scale(1.08); } }
+.goudflits { position: fixed; inset: 0; z-index: 70; pointer-events: none; background: radial-gradient(circle at 50% 60%, rgba(212,178,106,.55), rgba(212,178,106,0) 70%); animation: flits .6s ease-out forwards; }
+@keyframes flits { from { opacity: 1; } to { opacity: 0; } }
+
+/* na Geflikt! / betrapt */
+.voltooid-kaart h2 { font-size: 26px; color: var(--goud); transform: rotate(-3deg); transform-origin: left center; display: inline-block; align-self: flex-start; }
+.voltooid-kaart.betrapt h2 { color: var(--rood-t); }
+
+/* spelers */
+.spelers-kop h1 { font-size: 24px; }
+.rij .naam b { font-weight: 500; }
+.rij .naam span { font-size: 13px; color: var(--muted); }
+.rij.loopt { background: #201D17; }
+.rij.loopt .naam span { color: var(--goud); }
+.rij.grijs { opacity: 1; background: #151719; }
+.rij.grijs .naam b, .rij.grijs .naam span { color: var(--faint); }
+.pill { height: 44px; border-radius: 12px; border: 1px solid var(--rood-rand); font-size: 14px; font-weight: 600; padding: 0 16px; }
+.pill.meedoen { padding: 0 12px; font-weight: 700; white-space: nowrap; }
+.rij .jedoetmee { height: 44px; padding: 0 14px; display: inline-flex; align-items: center; border-radius: 12px; background: var(--s2); color: var(--muted); font-size: 14px; font-weight: 500; white-space: nowrap; }
+
+/* melding schudt */
+.scrim.anim.schud .sheet { animation: up .22s ease-out, schud 650ms cubic-bezier(.36,.07,.19,.97) .2s 1; }
+.twee.een-twee { grid-template-columns: 1fr 2fr; }
+.sheet .k { color: var(--muted); text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 500; }
+
+/* verdachte */
+.accused .inner { padding-top: calc(48px + env(safe-area-inset-top)); }
+.accused .k { text-transform: none; letter-spacing: 0; font-size: 15px; font-weight: 600; }
+.accused h2 { font-size: 26px; font-weight: 600; font-family: inherit; letter-spacing: 0; line-height: 1.3; }
+.acc-ring { position: relative; margin: 24px 0 8px; }
+.acc-ring .ring b { font-size: 64px !important; transform: translateY(-8px); }
+.acc-ring .onder { position: absolute; left: 0; right: 0; top: 128px; font-size: 13px; color: var(--muted); }
+.acc-beurt { margin: 24px 0 16px; width: 208px; height: 208px; border-radius: 104px; border: 8px solid var(--line); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; }
+.acc-beurt b { font-size: 30px; }
+.acc-beurt span { font-size: 13px; color: var(--muted); }
+.acc-vraag { width: 100%; padding: 20px; border-radius: 20px; background: var(--s1); display: flex; flex-direction: column; gap: 10px; text-align: left; }
+.acc-vraag b { font-size: 17px; }
+.acc-vraag span { font-size: 14px; color: var(--muted); }
+.check-missie { background: transparent; color: var(--text); font-weight: 500; }
+.check-missie .tekst { font-family: var(--typ); font-size: 17px; font-weight: 400; color: #F1E8D6; }
+
+/* uitslag met stempel */
+.uitslag { background: var(--bg); align-items: stretch; padding: 0; }
+.uitslag .kaart { max-width: 480px; margin: 0 auto; background: transparent; border: 0; border-radius: 0; padding: calc(56px + env(safe-area-inset-top)) 24px calc(28px + env(safe-area-inset-bottom)); align-items: center; text-align: center; gap: 14px; }
+.us-stempel { position: relative; width: 260px; height: 190px; display: flex; align-items: center; justify-content: center; }
+.uitslag.anim .us-stempel { animation: tril 380ms ease 520ms 1; }
+.us-ini { width: 120px; height: 120px; border-radius: 60px; background: var(--s2); display: flex; align-items: center; justify-content: center; font-family: var(--serif); font-size: 54px; font-weight: 800; color: var(--muted); }
+.us-stempel .stempel { margin-top: -40px; background: rgba(17,19,22,.55); }
+.us-stempel .stempel.rood { --sk: #D8473A; }
+.us-stempel .stempel.creme { --sk: #ECE9E3; }
+.uitslag.anim .stempel { animation: klap 560ms cubic-bezier(.2,.9,.3,1.2) 120ms 1 both; }
+.uitslag h2 { font-size: 30px; }
+.uitslag .sub { font-size: 15px; max-width: 300px; }
+.us-rijen { width: 100%; display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.us-rij { height: 56px; display: flex; align-items: center; gap: 12px; padding: 0 16px; border-radius: 14px; background: var(--s1); text-align: left; }
+.uitslag.anim .us-rij { animation: popin 320ms ease both; }
+.us-rij span { flex-grow: 1; font-size: 16px; }
+.us-rij i { font-style: normal; color: var(--faint); font-size: 14px; }
+.us-rij b { font-family: var(--serif); font-size: 22px; font-weight: 800; color: var(--muted); font-variant-numeric: tabular-nums; }
+.us-rij b.plus { color: var(--goud); }
+.us-rij b.min { color: var(--rood-t); }
+.uitslag .btn { width: 100%; }
+
+/* dossier-ceremonie (envelop) */
+.env-tekst h1 { font-size: 36px; line-height: 1.08; }
+.env-tekst .k { font-weight: 700; }
+.dmap { position: relative; width: 300px; height: 440px; margin-top: 8px; perspective: 1000px; flex-shrink: 0; }
+.dmap-achter { position: absolute; left: 0; top: 200px; z-index: 1; filter: drop-shadow(0 16px 24px rgba(0,0,0,.35)); }
+.dmap-papier { position: absolute; left: 14px; top: 212px; width: 272px; height: 318px; z-index: 2; padding: 22px 22px 18px; border-radius: 6px; background: linear-gradient(160deg, #FBF7EE, #EFE7D6); color: #2A1A14;
+  box-shadow: 0 10px 26px rgba(0,0,0,.3); display: flex; flex-direction: column; gap: 12px; transition: transform 800ms cubic-bezier(.2,.85,.25,1); touch-action: none; outline: none; }
+.dmap.uit .dmap-papier { z-index: 5; transform: translateY(-200px); }
+.dmap-kop { display: flex; justify-content: space-between; align-items: center; font-size: 12px; letter-spacing: 1.5px; color: #8A7B62; }
+.stempel-mini { padding: 2px 8px 0; border: 2px solid #C2302A; border-radius: 5px; font-family: var(--stempel); font-size: 12px; letter-spacing: 1.5px; color: #C2302A; transform: rotate(-8deg); }
+.dmap-inhoud { position: relative; flex-grow: 1; display: flex; flex-direction: column; overflow: hidden; }
+.dmap-tekst { display: flex; flex-direction: column; gap: 14px; filter: blur(6px); transition: filter 1400ms ease-in; }
+.dmap-tekst p { margin: 0; font-size: 21px; line-height: 1.35; }
+.dmap-meta { display: flex; flex-wrap: wrap; gap: 6px; font-size: 12px; letter-spacing: 1px; color: #6B5A4E; }
+.wasem { position: absolute; inset: -8px -10px; border-radius: 8px; background-color: rgba(246,242,234,.62);
+  background-image: radial-gradient(circle, rgba(255,255,255,.95) 0 1.4px, transparent 2px), radial-gradient(circle, rgba(255,255,255,.7) 0 2.2px, transparent 3px);
+  background-size: 13px 15px, 29px 23px; background-position: 0 0, 7px 9px; transition: opacity 1400ms ease-in; pointer-events: none; }
+.dmap-papier.toon .dmap-tekst { filter: none; transition: filter 350ms ease-out; }
+.dmap-papier.toon .wasem { opacity: 0; transition: opacity 350ms ease-out; }
+.dmap-hint { font-size: 12px; font-weight: 600; text-align: center; color: #8A7B62; min-height: 16px; }
+.dmap-papier.toon .dmap-hint { visibility: hidden; }
+.dmap-klep { position: absolute; left: 0; top: 260px; width: 300px; height: 170px; z-index: 3; transform-origin: 50% 100%; transition: transform 600ms cubic-bezier(.45,0,.2,1) 150ms; }
+.dmap.open .dmap-klep { transform: rotateX(-78deg); }
+.dmap-clip { position: absolute; left: 232px; top: 196px; z-index: 4; transform-origin: 50% 20%; transform: rotate(8deg); animation: wiebel 1.8s ease-in-out infinite;
+  transition: transform 650ms cubic-bezier(.3,.7,.3,1), opacity 450ms ease 250ms; }
+.dmap.open .dmap-clip { animation: none; transform: translate(70px, -120px) rotate(70deg); opacity: 0; }
+.dmap-puls { position: absolute; left: 217px; top: 200px; z-index: 5; width: 60px; height: 60px; border-radius: 30px; border: 2px solid rgba(233,199,116,.95); animation: clippuls 1.6s ease-out infinite; }
+.dmap-tik { position: absolute; left: 0; top: 190px; z-index: 6; width: 300px; height: 250px; border: 0; background: transparent; }
+@keyframes clippuls { 0% { transform: scale(.8); opacity: .9; } 100% { transform: scale(1.7); opacity: 0; } }
+@keyframes wiebel { 0%,100% { transform: rotate(8deg); } 50% { transform: rotate(14deg); } }
+@media (max-height: 760px) { .dmap { transform: scale(.86); transform-origin: top center; margin-bottom: -62px; } }
+
+/* uitleg-mock: dossier */
+.mock .ds-mock { background: #2B261E; border-color: #3A3226; align-items: stretch; }
+
+/* onthulling */
+.ont-ster { width: 64px; height: 64px; color: var(--feestgoud); display: block; }
+.ondertitel2 { font-size: clamp(20px, 2.6vw, 30px); color: #F0D9C9; }
+.feest .grote-naam { font-size: clamp(72px, 15vw, 220px); line-height: .95; letter-spacing: -2px; }
+.tik-knop { margin-top: 10px; height: 64px; padding: 0 36px; display: inline-flex; align-items: center; border-radius: 32px; background: var(--feestgoud); color: var(--donkerrood); font-size: clamp(18px, 2vw, 24px); font-weight: 700; }
+.ont-kop { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; }
+.ont-naam { margin: 0; font-family: var(--serif); font-weight: 800; font-size: clamp(44px, 6vw, 80px); line-height: 1; letter-spacing: -2px; }
+.ont-kop .typ { font-size: clamp(14px, 1.6vw, 20px); letter-spacing: 2px; color: #F0D9C9; }
+.ont-blad { position: relative; width: 100%; display: flex; flex-direction: column; gap: 14px; padding: clamp(20px, 2.4vw, 30px) clamp(20px, 2.6vw, 34px); border-radius: 6px 22px 22px 22px;
+  background: #F3EBDC; color: #2A1A14; box-shadow: 0 22px 40px rgba(0,0,0,.35); transform: rotate(-1deg); text-align: left; min-height: 220px; }
+.ont-lbl { font-size: clamp(12px, 1.3vw, 16px); letter-spacing: 2px; color: #8A7B62; }
+.ont-tekst { margin: 0; font-size: clamp(22px, 3.1vw, 40px); line-height: 1.25; }
+.ont-meta { font-size: clamp(13px, 1.4vw, 18px); color: #6B5A4E; }
+.ont-blad .stempel { left: auto; top: auto; right: clamp(14px, 2vw, 26px); bottom: clamp(18px, 2.6vw, 34px); margin: 0; width: auto; padding: 12px 26px 8px; border-width: 7px; border-radius: 16px;
+  font-size: clamp(40px, 5.6vw, 72px); letter-spacing: 5px; mix-blend-mode: multiply; opacity: .9; transform: rotate(-12deg); }
+.ont-blad .stempel.s1 { right: auto; left: clamp(14px, 3vw, 40px); bottom: clamp(60px, 7vw, 100px); transform: rotate(8deg); }
+.feest-main.anim .ont-blad .stempel { animation: klap-ont 620ms cubic-bezier(.2,.9,.3,1.2) 300ms 1 both; }
+.feest-main.anim .ont-blad .stempel.s1 { animation: klap-ont2 620ms cubic-bezier(.2,.9,.3,1.2) 1100ms 1 both; }
+.feest-main.anim .ont-blad { animation: tril-ont 380ms ease 820ms 1; }
+@keyframes klap-ont { 0% { transform: scale(2.6) rotate(-24deg); opacity: 0; } 55% { transform: scale(.9) rotate(-12deg); opacity: .95; } 72% { transform: scale(1.05) rotate(-12deg); } 100% { transform: scale(1) rotate(-12deg); opacity: .9; } }
+@keyframes klap-ont2 { 0% { transform: scale(2.6) rotate(-6deg); opacity: 0; } 55% { transform: scale(.9) rotate(8deg); opacity: .95; } 72% { transform: scale(1.05) rotate(8deg); } 100% { transform: scale(1) rotate(8deg); opacity: .9; } }
+@keyframes tril-ont { 0%,100% { transform: rotate(-1deg); } 20% { transform: rotate(-1deg) translate(-4px,2px); } 40% { transform: rotate(-1deg) translate(4px,-2px); } 60% { transform: rotate(-1deg) translate(-3px,1px); } }
+.feest-kaart.mooiniet { border: 2px solid var(--feestgoud); background: rgba(0,0,0,.32); }
+.stemkaart { background: rgba(0,0,0,.25); border: 0; }
+.stembalk { display: flex; align-items: center; gap: 14px; }
+.stembalk span { width: 84px; font-size: clamp(14px, 1.5vw, 18px); font-weight: 600; }
+.stembalk div { flex-grow: 1; height: 14px; border-radius: 7px; background: rgba(255,255,255,.12); overflow: hidden; }
+.stembalk i { display: block; height: 14px; transition: width .4s ease; }
+.stembalk b { width: 32px; text-align: right; font-size: clamp(20px, 2.4vw, 30px); font-variant-numeric: tabular-nums; }
+.feest .meta { display: none; }
+@media (min-width: 900px) { .onthul-grid.met-zij { grid-template-columns: 1.55fr 1fr; gap: 48px; align-items: start; } }
+.onthul-grid .links { width: 100%; }
+.stem-knoppen .stem, .stem-weet { font-family: var(--serif); font-weight: 800; }
+.feest-kaart .vraag { font-family: var(--serif); font-weight: 800; }
+
+@media (prefers-reduced-motion: reduce) {
+  .stempel, .ont-blad .stempel { animation: fade .3s both !important; }
+}
+/* stempel-correcties */
+.stempel { left: 0; right: 0; width: fit-content; margin: -32px auto 0; padding: 10px 18px 6px; font-size: 40px; }
+.ont-blad { padding-bottom: clamp(96px, 11vw, 150px); }
+.ont-blad .stempel { font-size: clamp(30px, 5.2vw, 68px); padding: 10px 20px 6px; border-width: clamp(4px, .5vw, 7px); }
+.ont-blad .stempel.s1 { bottom: clamp(18px, 2.6vw, 34px); }
+@media (max-width: 600px) { .ont-blad .stempel.s1 { bottom: clamp(70px, 18vw, 90px); left: 14px; } .ont-blad { padding-bottom: 150px; } }
+.dmap:not(.uit) .dmap-papier { height: 212px; overflow: hidden; }
+@media (min-width: 601px) {
+  .ont-blad { min-height: 320px; padding-bottom: 150px; }
+  .ont-blad .stempel { font-size: clamp(30px, 3.8vw, 54px); }
+  .ont-blad .stempel.s1 { left: clamp(14px, 2vw, 30px); bottom: 64px; }
+}
