@@ -105,16 +105,13 @@ const I = {
   masker: svg('<path d="M3 7c3-1 6-1 9 1 3-2 6-2 9-1 0 6-2.5 10-5.5 10-1.6 0-2.5-1.5-3.5-1.5S10.1 17 8.5 17C5.5 17 3 13 3 7z"/><circle cx="8.3" cy="10.5" r="1.2"/><circle cx="15.7" cy="10.5" r="1.2"/>'),
   tik: svg('<path d="M9 11V6.5a1.5 1.5 0 0 1 3 0V11"/><path d="M12 10.5V9a1.5 1.5 0 0 1 3 0v2"/><path d="M15 10.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-.5a6 6 0 0 1-4.6-2.2L5 16.5a1.5 1.5 0 0 1 2.3-2L9 16V11"/>'),
 };
-const LOGO = `<svg class="logo" viewBox="0 0 100 100" role="img" aria-label="Logo: dossiermap met een rode stempel B!">
+const LOGO = `<svg class="logo" viewBox="0 0 100 100" role="img" aria-label="Logo: dossiermap met een rode stempel BETRAPT!">
 <defs>
-<linearGradient id="b-bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2C3260"/><stop offset="1" stop-color="#15182A"/></linearGradient>
-<radialGradient id="b-spot" cx="0.5" cy="0.3" r="0.65"><stop offset="0" stop-color="#fff" stop-opacity="0.16"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
 <linearGradient id="b-kraft" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E8CB92"/><stop offset="1" stop-color="#C9A464"/></linearGradient>
 <linearGradient id="b-kraftd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#C9A464"/><stop offset="1" stop-color="#A9844A"/></linearGradient>
-<filter id="b-sh" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="2.2" stdDeviation="2.2" flood-color="#000" flood-opacity="0.45"/></filter>
+<filter id="b-sh" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#2A1A14" flood-opacity="0.35"/></filter>
 </defs>
-<rect width="100" height="100" rx="22" fill="url(#b-bg)"/>
-<rect width="100" height="100" rx="22" fill="url(#b-spot)"/>
+<g transform="translate(50 56) scale(1.06) translate(-50 -56)">
 <g transform="rotate(5 50 56)" filter="url(#b-sh)">
 <path d="M14 31 a4 4 0 0 1 4 -4 h19 l5 5 h40 a4 4 0 0 1 4 4 v43 a4 4 0 0 1 -4 4 h-64 a4 4 0 0 1 -4 -4z" fill="url(#b-kraftd)"/>
 <rect x="21" y="25" width="57" height="40" rx="2" fill="#F6F0E4"/>
@@ -123,9 +120,10 @@ const LOGO = `<svg class="logo" viewBox="0 0 100 100" role="img" aria-label="Log
 <path d="M14 41 H86" stroke="#F4E2B8" stroke-width="1" opacity="0.9"/>
 </g>
 <g transform="rotate(-12 50 63)" fill="#C2302A">
-<rect x="22.5" y="47" width="55" height="32" rx="6" fill="none" stroke="#C2302A" stroke-width="3.6"/>
-<rect x="26.6" y="51.1" width="46.8" height="23.8" rx="3.4" fill="none" stroke="#C2302A" stroke-width="1.2"/>
-<path transform="translate(36.05 52.8) scale(0.62)" fill-rule="evenodd" d="M0 0 H18 C26 0 30 4 30 10 C30 14 28 16.5 25 18 C29 19.5 31 22.5 31 27 C31 33 27 36 19 36 H0 Z M9 7 V14 H17 C20 14 21.5 12.7 21.5 10.5 C21.5 8.3 20 7 17 7 Z M9 21 V29 H18 C21.5 29 23 27.6 23 25 C23 22.6 21.5 21 18 21 Z M36 2 A2 2 0 0 1 38 0 H43 A2 2 0 0 1 45 2 V22 A2 2 0 0 1 43 24 H38 A2 2 0 0 1 36 22 Z M36 30 A2 2 0 0 1 38 28 H43 A2 2 0 0 1 45 30 V34 A2 2 0 0 1 43 36 H38 A2 2 0 0 1 36 34 Z"/>
+<rect x="12" y="51" width="76" height="24" rx="5" fill="none" stroke="#C2302A" stroke-width="3.2"/>
+<rect x="15.6" y="54.6" width="68.8" height="16.8" rx="3" fill="none" stroke="#C2302A" stroke-width="1"/>
+<path transform="translate(18.000 68.142) scale(0.006002 0.006902)" d="M116 0H780C1110 0 1297 -176 1297 -416C1297 -632 1141 -767 962 -774V-790C1124 -823 1239 -941 1239 -1112C1239 -1337 1067 -1490 734 -1490H116ZM469 -285V-647H704C843 -647 929 -572 929 -456C929 -350 855 -285 697 -285ZM469 -876V-1208H680C802 -1208 879 -1145 879 -1045C879 -938 793 -876 674 -876ZM1517 0H2550V-288H1870V-612H2497V-894H1870V-1202H2551V-1490H1517ZM2756 -1202H3207V0H3559V-1202H4010V-1490H2756ZM4232 0H4585V-513H4777L5050 0H5437L5126 -569C5291 -643 5385 -789 5385 -995C5385 -1299 5178 -1490 4842 -1490H4232ZM4585 -792V-1204H4767C4933 -1204 5019 -1134 5019 -995C5019 -856 4933 -792 4768 -792ZM5559 0H5951L6048 -317H6544L6645 0H7041L6529 -1490H6056ZM6131 -587 6151 -651C6200 -820 6244 -1008 6289 -1209C6337 -1009 6386 -821 6438 -651L6458 -587ZM7244 0H7597V-465H7844C8186 -465 8397 -668 8397 -975C8397 -1280 8190 -1490 7854 -1490H7244ZM7597 -744V-1204H7779C7945 -1204 8031 -1115 8031 -975C8031 -837 7945 -744 7780 -744ZM8569 -1202H9020V0H9372V-1202H9823V-1490H8569ZM10136 -469H10456L10482 -1490H10110ZM10296 21C10413 21 10491 -51 10491 -162C10491 -274 10413 -346 10296 -346C10179 -346 10101 -274 10101 -162C10101 -51 10179 21 10296 21Z"/>
+</g>
 </g>
 </svg>`;
 
