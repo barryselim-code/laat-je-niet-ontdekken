@@ -28,7 +28,7 @@ Installeerbare web-app (PWA) waarin iedereen aan tafel een geheime missie krijgt
 1. Maak een gratis project op [supabase.com](https://supabase.com) (regio: Europa, bijv. Frankfurt).
 2. **Anonieme login aanzetten:** Authentication › Sign In / Providers › *Allow anonymous sign-ins* aan.
 3. **Limiet ophogen:** Authentication › Rate Limits › anonieme aanmeldingen per uur naar 100. Standaard is 30 per IP-adres per uur, en aan tafel zit iedereen op dezelfde wifi.
-4. **Database:** SQL Editor › New query › voer na elkaar uit: `supabase/schema.sql`, `supabase/002_onthulling_stemrondes.sql` en `supabase/import_van_github.sql`.
+4. **Database:** SQL Editor › New query › voer na elkaar uit: `supabase/schema.sql` en `supabase/import_van_github.sql`.
    De laatste regel van de uitkomst is je **beheercode**. Bewaar die (bijv. in je wachtwoordmanager).
 5. **Gegevens voor de app:** Project Settings › API. Kopieer de *Project URL* en de *anon public key* (in nieuwere projecten heet die de *publishable key*; die werkt ook).
 
