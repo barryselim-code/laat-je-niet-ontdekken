@@ -33,6 +33,7 @@ create table if not exists geheim.missies (
   tekst_enc     bytea not null,
   uitleg_enc    bytea,
   categorie     text not null default 'overig',
+  soort         text not null default 'praten',
   familie       text,
   moeilijkheid  int  not null default 2 check (moeilijkheid between 1 and 3),
   thema         text not null default 'algemeen',
@@ -58,7 +59,16 @@ language sql stable as $$ select waarde from geheim.config where sleutel = 'sleu
 
 create or replace function geheim.versleutel(t text) returns bytea
 language sql stable as $$
-  select case when t is null then null else extensions.pgp_sym_encrypt(t, geheim.sleutel()) end
+  -- willekeurige sleutel, dus geen trage sleutel-rekking nodig
+  select case when t is null then null else extensions.pgp_sym_encrypt(t, geheim.sleutel(), 's2k-mode=1, cipher-algo=aes128') end
+$$;
+
+-- soort (voor de spelopties) volgt uit de categorie
+create or replace function geheim.soort_van(p_categorie text) returns text
+language sql immutable set search_path = public as $$
+  select case when p_categorie in ('beïnvloeden', 'beinvloeden') then 'sturen'
+              when p_categorie in ('gedrag', 'tafel') then 'doen'
+              else 'praten' end
 $$;
 
 create or replace function geheim.ontsleutel(b bytea) returns text
@@ -76,6 +86,7 @@ create table if not exists public.sessies (
   thema          text not null default 'kerst',
   moeilijkheid   text not null default 'gemengd' check (moeilijkheid in ('makkelijk','gemengd','moeilijk')),
   context        text[] not null default '{}',
+  soorten        text[] not null default '{praten,sturen,doen}',
   punten_aan     boolean not null default true,
   status         text not null default 'lobby' check (status in ('lobby','spel','onthulling','einde','geannuleerd')),
   host_id        uuid,
@@ -340,7 +351,7 @@ begin
   v_stage := 0;
   loop
     v_stage := v_stage + 1;
-    exit when v_stage > 3;
+    exit when v_stage > 4;
     with cat as (
       select t.categorie, count(*) c
         from public.toewijzingen t join public.spelers x on x.id = t.speler_id
@@ -351,7 +362,8 @@ begin
       from geheim.missies mi left join cat on cat.categorie = mi.categorie
      where not (mi.id = any(v_used))
        and (mi.familie is null or not (mi.familie = any(v_fams)))
-       and (v_stage >= 3 or mi.thema in (s.thema, 'algemeen'))
+       and (v_stage >= 4 or mi.thema in (s.thema, 'algemeen'))
+       and (v_stage >= 3 or mi.soort = any(s.soorten))
        and (v_stage >= 2 or mi.moeilijkheid = any(v_levels))
        and (mi.leeftijd <> '18+' or not v_kids)
        and (mi.leeftijd <> 'kids' or v_kids)
@@ -370,7 +382,7 @@ begin
   end if;
   if v_stage > 1 then
     update public.sessies set host_melding = 'Er waren weinig opdrachten over, dus de filters zijn versoepeld'
-      || case when v_stage = 2 then ' (moeilijkheid).' else ' (moeilijkheid en thema).' end
+      || case v_stage when 2 then ' (moeilijkheid).' when 3 then ' (moeilijkheid en soort).' else ' (moeilijkheid, soort en thema).' end
      where id = s.id;
   end if;
 
@@ -449,18 +461,22 @@ end $$;
 -- ---------------------------------------------------------------------
 -- Functies voor de app (RPC)
 -- ---------------------------------------------------------------------
+drop function if exists public.maak_sessie(text, text, text, text, text[], boolean);
 create or replace function public.maak_sessie(p_naam text, p_host_naam text, p_thema text default 'kerst',
-  p_moeilijkheid text default 'gemengd', p_context text[] default '{}', p_punten boolean default true)
+  p_moeilijkheid text default 'gemengd', p_context text[] default '{}', p_punten boolean default true,
+  p_soorten text[] default null)
 returns json language plpgsql security definer set search_path = public as $$
 declare s public.sessies; v_speler uuid; v_naam text := left(trim(coalesce(p_host_naam, '')), 20);
+        v_soorten text[] := array(select distinct x from unnest(coalesce(p_soorten, '{}')) x where x in ('praten', 'sturen', 'doen'));
 begin
   if auth.uid() is null then raise exception 'niet_ingelogd'; end if;
   if v_naam = '' then raise exception 'naam_leeg'; end if;
   perform geheim.opruimen();
-  insert into public.sessies (code, naam, thema, moeilijkheid, context, punten_aan, test, test_eigenaar)
+  if cardinality(v_soorten) = 0 then v_soorten := '{praten,sturen,doen}'; end if;  -- minstens één soort
+  insert into public.sessies (code, naam, thema, moeilijkheid, context, punten_aan, soorten, test, test_eigenaar)
   values (geheim.nieuwe_code(), coalesce(nullif(left(trim(p_naam), 40), ''), 'Betrapt!'),
           coalesce(nullif(lower(p_thema), ''), 'kerst'), coalesce(p_moeilijkheid, 'gemengd'),
-          coalesce(p_context, '{}'), coalesce(p_punten, true),
+          coalesce(p_context, '{}'), coalesce(p_punten, true), v_soorten,
           lower(trim(coalesce(p_naam, ''))) = 'barry-test-spel',
           case when lower(trim(coalesce(p_naam, ''))) = 'barry-test-spel' then auth.uid() end)
   returning * into s;
@@ -1117,6 +1133,7 @@ begin
                      when x like 'drin%' then 'drinken'
                      when x like 'gast%' or x like 'host%' then 'gastheer'
                      when x like 'kind%' or x like 'kid%' then 'kinderen'
+                     when x like 'versier%' or x like 'decor%' then 'versiering'
                      else x end from unnest(v_vereist) x);
 
       v_doelwit := case jsonb_typeof(e->'doelwit')
@@ -1128,10 +1145,12 @@ begin
       v_leeftijd := lower(coalesce(nullif(trim(e->>'leeftijd'), ''), 'iedereen'));
       v_leeftijd := case when v_leeftijd like '%18%' then '18+' when v_leeftijd like 'kid%' or v_leeftijd like 'kind%' then 'kids' else 'iedereen' end;
 
-      insert into geheim.missies (id, tekst_enc, uitleg_enc, categorie, familie, moeilijkheid, thema,
+      insert into geheim.missies (id, tekst_enc, uitleg_enc, categorie, soort, familie, moeilijkheid, thema,
                                   doelwit, heeft_woord, vereist, leeftijd, getal_min, getal_max)
       values (v_id, geheim.versleutel(v_tekst), geheim.versleutel(nullif(trim(e->>'uitleg'), '')),
               lower(coalesce(nullif(trim(e->>'categorie'), ''), 'overig')),
+              case when lower(trim(e->>'soort')) in ('praten', 'sturen', 'doen') then lower(trim(e->>'soort'))
+                   else geheim.soort_van(lower(trim(e->>'categorie'))) end,
               nullif(lower(trim(e->>'familie')), ''),
               v_moeil,
               lower(coalesce(nullif(trim(e->>'thema'), ''), 'algemeen')),
@@ -1140,7 +1159,7 @@ begin
               v_vereist, v_leeftijd,
               coalesce((e->>'getal_min')::int, 2), coalesce((e->>'getal_max')::int, 5))
       on conflict (id) do update set
-        tekst_enc = excluded.tekst_enc, uitleg_enc = excluded.uitleg_enc, categorie = excluded.categorie,
+        tekst_enc = excluded.tekst_enc, uitleg_enc = excluded.uitleg_enc, categorie = excluded.categorie, soort = excluded.soort,
         familie = excluded.familie, moeilijkheid = excluded.moeilijkheid, thema = excluded.thema,
         doelwit = excluded.doelwit, heeft_woord = excluded.heeft_woord, vereist = excluded.vereist,
         leeftijd = excluded.leeftijd, getal_min = excluded.getal_min, getal_max = excluded.getal_max,
@@ -1176,7 +1195,7 @@ do $$
 declare f text;
 begin
   foreach f in array array[
-    'maak_sessie(text,text,text,text,text[],boolean)', 'join_sessie(text,text,text)',
+    'maak_sessie(text,text,text,text,text[],boolean,text[])', 'join_sessie(text,text,text)',
     'overname_check(uuid)', 'host_overname(uuid,boolean)', 'start_spel(uuid)', 'mijn_missie(uuid)',
     'gebruik_joker(uuid)', 'markeer_voltooid(uuid,uuid,boolean)', 'beschuldig(uuid,uuid)', 'meedoen(uuid)',
     'reageer(uuid,boolean)', 'host_sluit_beschuldiging(uuid)', 'host_verwijder(uuid)', 'host_extra_joker(uuid)',

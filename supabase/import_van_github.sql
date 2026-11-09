@@ -33,11 +33,17 @@ end $$;
 -- De inhoud van missies.json (als tekst) importeren. Vervangt de bestaande missies.
 -- xor+base64 terugdraaien (formaat van de missie-chat)
 create or replace function geheim.ontxor(p_data text, p_sleutel text) returns text
-language sql immutable set search_path = public as $$
-  with x as (select decode(regexp_replace(p_data, '\s', '', 'g'), 'base64') b, convert_to(p_sleutel, 'UTF8') k)
-  select convert_from(decode(string_agg(lpad(to_hex(get_byte(x.b, i) # get_byte(x.k, i % length(x.k))), 2, '0'), '' order by i), 'hex'), 'UTF8')
-    from x, generate_series(0, length(x.b) - 1) i
-$$;
+language plpgsql immutable set search_path = public as $$
+declare b bytea := decode(regexp_replace(p_data, '\s', '', 'g'), 'base64');
+        k bytea := convert_to(p_sleutel, 'UTF8');
+        n int := length(b); kl int := length(k); i int;
+begin
+  -- byte voor byte op een lokale variabele (snel; geen herhaald uitpakken)
+  for i in 0 .. n - 1 loop
+    b := set_byte(b, i, get_byte(b, i) # get_byte(k, i % kl));
+  end loop;
+  return convert_from(b, 'UTF8');
+end $$;
 
 create or replace function geheim.importeer_tekst(p_inhoud text) returns json
 language plpgsql security definer set search_path = public as $$

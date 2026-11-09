@@ -10,7 +10,7 @@ let sb = null, uid = null, kanaal = null, pingTimer = null, tikTimer = null, laa
 
 const S = {
   view: 'laden', terug: 'home', fout: null, bezig: false,
-  form: { naam: '', hostNaam: '', thema: 'kerst', moeilijkheid: 'gemengd', context: ['eten', 'drinken'], punten: true, code: '', spelerNaam: '' },
+  form: { naam: '', hostNaam: '', thema: 'kerst', moeilijkheid: 'gemengd', context: ['eten', 'drinken', 'gastheer', 'versiering'], soorten: ['praten', 'sturen', 'doen'], punten: true, code: '', spelerNaam: '' },
   sid: null, sessie: null, spelers: [], besch: [], deel: [], stemmen: [], overnames: [],
   missie: null, onthulling: null, tab: 'missie', offset: 0,
   sheet: null, toasts: [], uitslag: null, gezien: new Set(), eersteLaad: true,
@@ -105,27 +105,30 @@ const I = {
   masker: svg('<path d="M3 7c3-1 6-1 9 1 3-2 6-2 9-1 0 6-2.5 10-5.5 10-1.6 0-2.5-1.5-3.5-1.5S10.1 17 8.5 17C5.5 17 3 13 3 7z"/><circle cx="8.3" cy="10.5" r="1.2"/><circle cx="15.7" cy="10.5" r="1.2"/>'),
   tik: svg('<path d="M9 11V6.5a1.5 1.5 0 0 1 3 0V11"/><path d="M12 10.5V9a1.5 1.5 0 0 1 3 0v2"/><path d="M15 10.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-.5a6 6 0 0 1-4.6-2.2L5 16.5a1.5 1.5 0 0 1 2.3-2L9 16V11"/>'),
 };
-const LOGO = `<svg class="logo" viewBox="0 0 100 100" role="img" aria-label="Logo: dossiermap met een rode stempel BETRAPT!">
-<defs>
-<linearGradient id="b-kraft" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E8CB92"/><stop offset="1" stop-color="#C9A464"/></linearGradient>
-<linearGradient id="b-kraftd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#C9A464"/><stop offset="1" stop-color="#A9844A"/></linearGradient>
-<filter id="b-sh" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#2A1A14" flood-opacity="0.35"/></filter>
-</defs>
-<g transform="translate(50 56) scale(1.06) translate(-50 -56)">
-<g transform="rotate(5 50 56)" filter="url(#b-sh)">
-<path d="M14 31 a4 4 0 0 1 4 -4 h19 l5 5 h40 a4 4 0 0 1 4 4 v43 a4 4 0 0 1 -4 4 h-64 a4 4 0 0 1 -4 -4z" fill="url(#b-kraftd)"/>
-<rect x="21" y="25" width="57" height="40" rx="2" fill="#F6F0E4"/>
-<path d="M26 31.5 H70 M26 37.5 H62" stroke="#CFC5B3" stroke-width="2.2" stroke-linecap="round"/>
-<rect x="13" y="40" width="74" height="46" rx="4" fill="url(#b-kraft)"/>
-<path d="M14 41 H86" stroke="#F4E2B8" stroke-width="1" opacity="0.9"/>
-</g>
-<g transform="rotate(-12 50 63)" fill="#C2302A">
-<rect x="12" y="51" width="76" height="24" rx="5" fill="none" stroke="#C2302A" stroke-width="3.2"/>
-<rect x="15.6" y="54.6" width="68.8" height="16.8" rx="3" fill="none" stroke="#C2302A" stroke-width="1"/>
-<path transform="translate(18.000 68.142) scale(0.006002 0.006902)" d="M116 0H780C1110 0 1297 -176 1297 -416C1297 -632 1141 -767 962 -774V-790C1124 -823 1239 -941 1239 -1112C1239 -1337 1067 -1490 734 -1490H116ZM469 -285V-647H704C843 -647 929 -572 929 -456C929 -350 855 -285 697 -285ZM469 -876V-1208H680C802 -1208 879 -1145 879 -1045C879 -938 793 -876 674 -876ZM1517 0H2550V-288H1870V-612H2497V-894H1870V-1202H2551V-1490H1517ZM2756 -1202H3207V0H3559V-1202H4010V-1490H2756ZM4232 0H4585V-513H4777L5050 0H5437L5126 -569C5291 -643 5385 -789 5385 -995C5385 -1299 5178 -1490 4842 -1490H4232ZM4585 -792V-1204H4767C4933 -1204 5019 -1134 5019 -995C5019 -856 4933 -792 4768 -792ZM5559 0H5951L6048 -317H6544L6645 0H7041L6529 -1490H6056ZM6131 -587 6151 -651C6200 -820 6244 -1008 6289 -1209C6337 -1009 6386 -821 6438 -651L6458 -587ZM7244 0H7597V-465H7844C8186 -465 8397 -668 8397 -975C8397 -1280 8190 -1490 7854 -1490H7244ZM7597 -744V-1204H7779C7945 -1204 8031 -1115 8031 -975C8031 -837 7945 -744 7780 -744ZM8569 -1202H9020V0H9372V-1202H9823V-1490H8569ZM10136 -469H10456L10482 -1490H10110ZM10296 21C10413 21 10491 -51 10491 -162C10491 -274 10413 -346 10296 -346C10179 -346 10101 -274 10101 -162C10101 -51 10179 21 10296 21Z"/>
-</g>
-</g>
-</svg>`;
+const LOGO = `<svg class="logo" viewBox="0 0 100 100" role="img" aria-label="Logo: open envelop met een brief en een lakzegel">
+<defs><linearGradient id="h-bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#30355A"/><stop offset="1" stop-color="#191B2B"/></linearGradient>
+<radialGradient id="h-spot" cx="0.5" cy="0.32" r="0.6"><stop offset="0" stop-color="#fff" stop-opacity="0.14"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+<linearGradient id="h-back" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#B9AD97"/><stop offset="1" stop-color="#A59880"/></linearGradient>
+<linearGradient id="h-flap" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#CFC3AD"/><stop offset="1" stop-color="#E3D9C7"/></linearGradient>
+<linearGradient id="h-card" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#ECE6DB"/></linearGradient>
+<linearGradient id="h-front" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FBF7F0"/><stop offset="1" stop-color="#E4DBCB"/></linearGradient>
+<radialGradient id="h-seal" cx="0.4" cy="0.35" r="0.7"><stop offset="0" stop-color="#B84A45"/><stop offset="1" stop-color="#7A2326"/></radialGradient>
+<filter id="h-sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="1.6" stdDeviation="1.6" flood-color="#000" flood-opacity="0.35"/></filter>
+<filter id="h-shup" x="-30%" y="-40%" width="160%" height="180%"><feDropShadow dx="0" dy="-1.4" stdDeviation="1.4" flood-color="#000" flood-opacity="0.28"/></filter>
+<filter id="h-blur" x="-20%" y="-200%" width="140%" height="500%"><feGaussianBlur stdDeviation="2"/></filter></defs>
+<rect width="100" height="100" rx="22" fill="url(#h-bg)"/><rect width="100" height="100" rx="22" fill="url(#h-spot)"/>
+<ellipse cx="50" cy="87" rx="34" ry="3.5" fill="#000" opacity="0.35" filter="url(#h-blur)"/>
+<rect x="18" y="44" width="64" height="40" rx="3.5" fill="url(#h-back)"/>
+<path d="M18 46 L50 24 L82 46Z" fill="url(#h-flap)" stroke="#fff" stroke-opacity="0.35" stroke-width="0.6" stroke-linejoin="round"/>
+<rect x="28" y="20" width="44" height="52" rx="3" fill="url(#h-card)" filter="url(#h-sh)"/>
+<rect x="31" y="23" width="38" height="46" rx="2" fill="none" stroke="#23263A" stroke-opacity="0.12" stroke-width="0.6"/>
+<path d="M34 29.5 H66 M34 36.5 H66 M34 43.5 H60 M34 50.5 H63" stroke="#23263A" stroke-opacity="0.5" stroke-width="2.6" stroke-linecap="round"/>
+<path d="M18 50 L50 68 L82 50 V80.5 A3.5 3.5 0 0 1 78.5 84 H21.5 A3.5 3.5 0 0 1 18 80.5Z" fill="url(#h-front)" filter="url(#h-shup)"/>
+<path d="M18.5 84 L44 65.5 M81.5 84 L56 65.5" stroke="#8F826B" stroke-opacity="0.25" stroke-width="0.7"/>
+<path d="M18.4 50.4 L50 68 L81.6 50.4" fill="none" stroke="#fff" stroke-opacity="0.8" stroke-width="0.7"/>
+<circle cx="50" cy="70" r="6.4" fill="url(#h-seal)" filter="url(#h-sh)"/>
+<circle cx="50" cy="70" r="3.9" fill="none" stroke="#5E1A1C" stroke-opacity="0.55" stroke-width="0.8"/>
+<path d="M47.4 67.6 A3.4 3.4 0 0 1 51.6 66.8" fill="none" stroke="#fff" stroke-opacity="0.4" stroke-width="0.8" stroke-linecap="round"/></svg>`;
 
 function ring(id, rest, maat, kleur, tekst = true) {
   const r = maat / 2 - 6, o = 2 * Math.PI * r;
@@ -181,7 +184,8 @@ function vHome() {
 
 function vNieuw() {
   const f = S.form, pr = (b) => (b ? 'true' : 'false');
-  const ctx = [['eten', 'Er wordt gegeten'], ['drinken', 'Er wordt gedronken'], ['kinderen', 'Kinderen aan tafel'], ['gastheer', 'Ik ben de gastheer']];
+  const ctx = [['eten', 'Er wordt gegeten'], ['drinken', 'Er wordt gedronken'], ['gastheer', 'Er is een gastheer of -vrouw'], ['kinderen', 'Kinderen aan tafel'], ...(f.thema === 'kerst' ? [['versiering', 'Kerstversiering op tafel']] : [])];
+  const soorten = [['praten', 'Praten', 'gesprek sturen, woorden gebruiken'], ['sturen', 'Sturen', 'een ander iets laten zeggen of doen'], ['doen', 'Doen', 'gedrag en spullen op tafel']];
   return `<main class="screen licht">
     <div class="kop-terug"><button class="iconbtn" data-a="view" data-v="home" aria-label="Terug">${I.terug}</button></div>
     <div style="display:flex;align-items:center;gap:10px;padding:0 24px 4px"><h1 class="titel-serif" style="color:var(--kerstrood)">Nieuwe avond</h1><span style="width:24px;height:24px;color:#C99A2E">${I.ster}</span></div>
@@ -195,6 +199,8 @@ function vNieuw() {
         <button class="tegel" data-a="set" data-k="thema" data-val="algemeen" aria-pressed="${pr(f.thema === 'algemeen')}">${f.thema === 'algemeen' ? `<span style="color:var(--feestgoud)">${I.ster}</span>` : ''}Algemeen</button></div></div>
       <div class="field"><span class="label">Moeilijkheid</span><div class="seg">${['makkelijk', 'gemengd', 'moeilijk'].map((m) => `<button data-a="set" data-k="moeilijkheid" data-val="${m}" aria-pressed="${pr(f.moeilijkheid === m)}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</div></div>
       <div class="field"><span class="label">Wat gebeurt er aan tafel?</span><div class="chips">${ctx.map(([k, t]) => `<button class="chip" data-a="ctx" data-val="${k}" aria-pressed="${pr(f.context.includes(k))}">${t}</button>`).join('')}</div></div>
+      <div class="field"><span class="label">Soort opdrachten</span><div class="chips">${soorten.map(([k, t]) => `<button class="chip" data-a="soort" data-val="${k}" aria-pressed="${pr(f.soorten.includes(k))}">${t}</button>`).join('')}</div>
+        <span class="hint">${soorten.filter(([k]) => f.soorten.includes(k)).map(([, t, u]) => `${t}: ${u}`).join(' · ')}</span></div>
       <div class="toggle-row"><div><b>Punten tellen</b><span>Uit = alleen gehaald of niet</span></div><button class="toggle" data-a="punten" aria-pressed="${pr(f.punten)}" aria-label="Punten tellen"></button></div>
       ${S.fout ? `<p class="error" role="alert">${esc(S.fout)}</p>` : ''}
     </div>
@@ -869,6 +875,7 @@ const ACTIES = {
   'speluitleg-terug': () => { S.view = S.terug || 'home'; },
   'naar-home': () => verlaat(),
   set: (el) => { S.form[el.dataset.k] = el.dataset.val; },
+  soort: (el) => { const c = S.form.soorten, v = el.dataset.val; if (c.includes(v) && c.length === 1) return; S.form.soorten = c.includes(v) ? c.filter((x) => x !== v) : [...c, v]; },
   ctx: (el) => { const c = S.form.context, v = el.dataset.val; S.form.context = c.includes(v) ? c.filter((x) => x !== v) : [...c, v]; },
   punten: () => { S.form.punten = !S.form.punten; },
   installeer: async () => { const p = S.installPrompt; S.installPrompt = null; p?.prompt(); },
@@ -876,7 +883,7 @@ const ACTIES = {
     const f = S.form;
     if (!f.hostNaam.trim()) throw new Error('naam_leeg');
     ls.set('naam', f.hostNaam.trim());
-    const r = await rpc('maak_sessie', { p_naam: f.naam || null, p_host_naam: f.hostNaam, p_thema: f.thema, p_moeilijkheid: f.moeilijkheid, p_context: f.context, p_punten: f.punten });
+    const r = await rpc('maak_sessie', { p_naam: f.naam || null, p_host_naam: f.hostNaam, p_thema: f.thema, p_moeilijkheid: f.moeilijkheid, p_context: f.context.filter((c) => c !== 'versiering' || f.thema === 'kerst'), p_punten: f.punten, p_soorten: f.soorten });
     await betreed(r.sessie_id);
   }),
   join: () => joinMet(null),
