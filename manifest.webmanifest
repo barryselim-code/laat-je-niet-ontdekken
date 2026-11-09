@@ -1,7 +1,7 @@
 {
-  "name": "Laat je niet ontdekken!",
-  "short_name": "Niet ontdekken",
-  "description": "Iedereen aan tafel krijgt een geheime missie.",
+  "name": "Betrapt!",
+  "short_name": "Betrapt!",
+  "description": "Iedereen aan tafel krijgt een geheime opdracht.",
   "lang": "nl",
   "start_url": "./",
   "scope": "./",

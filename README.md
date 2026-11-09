@@ -1,8 +1,27 @@
-# Laat je niet ontdekken!
+# Betrapt!
 
-Installeerbare web-app (PWA) waarin iedereen aan tafel een geheime missie krijgt. De app draait op GitHub Pages; Supabase is de backend (database, realtime en anonieme login).
+Installeerbare web-app (PWA) waarin iedereen aan tafel een geheime opdracht krijgt. Voer hem ongemerkt uit en word niet betrapt. De app draait op GitHub Pages; Supabase is de backend (database, realtime en anonieme login).
 
 **De missies staan nooit in deze repository.** Ze gaan via de beheerpagina rechtstreeks en versleuteld de database in.
+
+## Woorden in het spel
+
+| Onderdeel | Naam in de app |
+| --- | --- |
+| Missie | Opdracht |
+| Beschuldigen | Betrap! |
+| Meedoen | Ik zag het ook! |
+| Toegeven | Je hebt me! |
+| Afwijzen | Mooi niet! |
+| Voltooid | Geflikt! |
+| Ontmaskerd | Betrapt |
+| Voltooid en nooit verdacht | Ongezien |
+| Joker | Andere opdracht |
+| Winnaar | Sluwste van de tafel |
+| Meeste terechte betrappingen | Haviksoog |
+| Opdracht met de minste verdenkingen | Onder de radar |
+
+In de code en de database heten de dingen nog zoals in het framework (missie, beschuldiging, joker).
 
 ## Wat zit erin (MVP voor kerst)
 

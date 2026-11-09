@@ -303,10 +303,10 @@ begin
     v_getal := 1 + (select count(*) + coalesce(sum(cardinality(gewisseld)), 0) from public.toewijzingen where sessie_id = s.id)::int;
     select x.id, x.naam into v_doelwit, v_doelwitnaam from public.spelers x
      where x.sessie_id = s.id and x.id <> p_speler and not x.verwijderd order by random() limit 1;
-    v_tekst := 'Testmissie ' || v_getal || case when v_getal % 2 = 0 and v_doelwit is not null
+    v_tekst := 'Testopdracht ' || v_getal || case when v_getal % 2 = 0 and v_doelwit is not null
                  then ': laat ' || v_doelwitnaam || ' iets over het weer zeggen.' else ': zeg twee keer het woord "testwoord".' end;
     if v_getal % 2 <> 0 then v_doelwit := null; end if;
-    v_uitleg := 'Dit is een nepmissie voor de testavond; geen echte missie.';
+    v_uitleg := 'Dit is een nepopdracht voor de testavond; geen echte opdracht.';
     if v_oud.speler_id is null then
       insert into public.toewijzingen (speler_id, sessie_id, missie_id, moeilijkheid, categorie, tekst_enc, uitleg_enc, doelwit_id)
       values (p_speler, s.id, 'test-' || v_getal, 1 + v_getal % 3, (array['gesprek','beïnvloeden','woord','gedrag','tafel'])[1 + v_getal % 5],
@@ -364,12 +364,12 @@ begin
   end loop;
 
   if m.id is null then
-    update public.sessies set host_melding = 'De missies zijn op. Niet iedereen kon een (nieuwe) missie krijgen.'
+    update public.sessies set host_melding = 'De opdrachten zijn op. Niet iedereen kon een (nieuwe) opdracht krijgen.'
      where id = s.id;
     raise exception 'pool_op';
   end if;
   if v_stage > 1 then
-    update public.sessies set host_melding = 'Er waren weinig missies over, dus de filters zijn versoepeld'
+    update public.sessies set host_melding = 'Er waren weinig opdrachten over, dus de filters zijn versoepeld'
       || case when v_stage = 2 then ' (moeilijkheid).' else ' (moeilijkheid en thema).' end
      where id = s.id;
   end if;
@@ -458,7 +458,7 @@ begin
   if v_naam = '' then raise exception 'naam_leeg'; end if;
   perform geheim.opruimen();
   insert into public.sessies (code, naam, thema, moeilijkheid, context, punten_aan, test, test_eigenaar)
-  values (geheim.nieuwe_code(), coalesce(nullif(left(trim(p_naam), 40), ''), 'Laat je niet ontdekken!'),
+  values (geheim.nieuwe_code(), coalesce(nullif(left(trim(p_naam), 40), ''), 'Betrapt!'),
           coalesce(nullif(lower(p_thema), ''), 'kerst'), coalesce(p_moeilijkheid, 'gemengd'),
           coalesce(p_context, '{}'), coalesce(p_punten, true),
           lower(trim(coalesce(p_naam, ''))) = 'barry-test-spel',
