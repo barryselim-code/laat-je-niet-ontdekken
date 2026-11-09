@@ -10,12 +10,21 @@ jobs:
   importeren:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: config.js
+          sparse-checkout-cone-mode: false
       - name: Wachten tot GitHub het nieuwe bestand serveert
         run: sleep 45
       - name: Importeren in Supabase
         run: |
-          KEY=$(grep -o "eyJ[^']*" <<< "$(curl -fsS https://raw.githubusercontent.com/${{ github.repository }}/${{ github.sha }}/config.js)")
+          KEY=$(grep -o "eyJ[^']*" config.js | head -1)
+          if [ -z "$KEY" ]; then echo "Geen anon key gevonden in config.js"; exit 1; fi
           URL=https://tvvfarjafpbaguxfutyz.supabase.co
-          RES=$(curl -sS -X POST "$URL/rest/v1/rpc/ververs_missies" -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{}')
-          echo "Resultaat (alleen aantallen): $RES"
-          echo "$RES" | grep -q '"geimporteerd"' || exit 1
+          for poging in 1 2 3; do
+            RES=$(curl -sS --retry 2 -X POST "$URL/rest/v1/rpc/ververs_missies" -H "apikey: $KEY" -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" -d '{}' || true)
+            echo "Poging $poging, resultaat (alleen aantallen): $(echo "$RES" | sed 's/"overzicht".*//')"
+            echo "$RES" | grep -q '"geimporteerd"' && exit 0
+            sleep 10
+          done
+          exit 1

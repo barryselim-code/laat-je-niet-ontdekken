@@ -1110,7 +1110,7 @@ declare e jsonb; i int := 0; v_ok int := 0; v_fouten jsonb := '[]'; v_id text; v
 begin
   perform geheim.eis_token(p_token);
   if jsonb_typeof(p_missies) <> 'array' then raise exception 'geen_lijst'; end if;
-  if p_vervangen then delete from geheim.missies; end if;
+  if p_vervangen then delete from geheim.missies where true; end if;
 
   for e in select * from jsonb_array_elements(p_missies) loop
     i := i + 1;
@@ -1171,11 +1171,11 @@ begin
   end loop;
 
   if p_woorden is not null and jsonb_typeof(p_woorden) = 'array' and jsonb_array_length(p_woorden) > 0 then
-    delete from geheim.woorden;
+    delete from geheim.woorden where true;
     insert into geheim.woorden (woord_enc, thema)
       select geheim.versleutel(trim(x)), 'algemeen' from jsonb_array_elements_text(p_woorden) x where trim(x) <> '';
   elsif p_woorden is not null and jsonb_typeof(p_woorden) = 'object' then
-    delete from geheim.woorden;
+    delete from geheim.woorden where true;
     insert into geheim.woorden (woord_enc, thema)
       select geheim.versleutel(trim(w)), lower(kv.key)
         from jsonb_each(p_woorden) kv, jsonb_array_elements_text(case when jsonb_typeof(kv.value) = 'array' then kv.value else '[]' end) w
