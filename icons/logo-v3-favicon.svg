@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+<rect width="100" height="100" rx="22" fill="#F6F0E4"/>
+<g transform="rotate(-12 50 50)" fill="#C2302A">
+<rect x="10" y="22" width="80" height="56" rx="10" fill="none" stroke="#C2302A" stroke-width="7"/>
+<path transform="translate(26.4 31) scale(1.05)" fill-rule="evenodd" d="M0 0 H18 C26 0 30 4 30 10 C30 14 28 16.5 25 18 C29 19.5 31 22.5 31 27 C31 33 27 36 19 36 H0 Z M9 7 V14 H17 C20 14 21.5 12.7 21.5 10.5 C21.5 8.3 20 7 17 7 Z M9 21 V29 H18 C21.5 29 23 27.6 23 25 C23 22.6 21.5 21 18 21 Z M36 2 A2 2 0 0 1 38 0 H43 A2 2 0 0 1 45 2 V22 A2 2 0 0 1 43 24 H38 A2 2 0 0 1 36 22 Z M36 30 A2 2 0 0 1 38 28 H43 A2 2 0 0 1 45 30 V34 A2 2 0 0 1 43 36 H38 A2 2 0 0 1 36 34 Z"/>
+</g>
+</svg>

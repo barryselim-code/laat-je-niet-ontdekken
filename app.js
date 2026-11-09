@@ -105,30 +105,29 @@ const I = {
   masker: svg('<path d="M3 7c3-1 6-1 9 1 3-2 6-2 9-1 0 6-2.5 10-5.5 10-1.6 0-2.5-1.5-3.5-1.5S10.1 17 8.5 17C5.5 17 3 13 3 7z"/><circle cx="8.3" cy="10.5" r="1.2"/><circle cx="15.7" cy="10.5" r="1.2"/>'),
   tik: svg('<path d="M9 11V6.5a1.5 1.5 0 0 1 3 0V11"/><path d="M12 10.5V9a1.5 1.5 0 0 1 3 0v2"/><path d="M15 10.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-.5a6 6 0 0 1-4.6-2.2L5 16.5a1.5 1.5 0 0 1 2.3-2L9 16V11"/>'),
 };
-const LOGO = `<svg class="logo" viewBox="0 0 100 100" role="img" aria-label="Logo: open envelop met een brief en een lakzegel">
-<defs><linearGradient id="h-bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#30355A"/><stop offset="1" stop-color="#191B2B"/></linearGradient>
-<radialGradient id="h-spot" cx="0.5" cy="0.32" r="0.6"><stop offset="0" stop-color="#fff" stop-opacity="0.14"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
-<linearGradient id="h-back" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#B9AD97"/><stop offset="1" stop-color="#A59880"/></linearGradient>
-<linearGradient id="h-flap" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#CFC3AD"/><stop offset="1" stop-color="#E3D9C7"/></linearGradient>
-<linearGradient id="h-card" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#ECE6DB"/></linearGradient>
-<linearGradient id="h-front" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FBF7F0"/><stop offset="1" stop-color="#E4DBCB"/></linearGradient>
-<radialGradient id="h-seal" cx="0.4" cy="0.35" r="0.7"><stop offset="0" stop-color="#B84A45"/><stop offset="1" stop-color="#7A2326"/></radialGradient>
-<filter id="h-sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="1.6" stdDeviation="1.6" flood-color="#000" flood-opacity="0.35"/></filter>
-<filter id="h-shup" x="-30%" y="-40%" width="160%" height="180%"><feDropShadow dx="0" dy="-1.4" stdDeviation="1.4" flood-color="#000" flood-opacity="0.28"/></filter>
-<filter id="h-blur" x="-20%" y="-200%" width="140%" height="500%"><feGaussianBlur stdDeviation="2"/></filter></defs>
-<rect width="100" height="100" rx="22" fill="url(#h-bg)"/><rect width="100" height="100" rx="22" fill="url(#h-spot)"/>
-<ellipse cx="50" cy="87" rx="34" ry="3.5" fill="#000" opacity="0.35" filter="url(#h-blur)"/>
-<rect x="18" y="44" width="64" height="40" rx="3.5" fill="url(#h-back)"/>
-<path d="M18 46 L50 24 L82 46Z" fill="url(#h-flap)" stroke="#fff" stroke-opacity="0.35" stroke-width="0.6" stroke-linejoin="round"/>
-<rect x="28" y="20" width="44" height="52" rx="3" fill="url(#h-card)" filter="url(#h-sh)"/>
-<rect x="31" y="23" width="38" height="46" rx="2" fill="none" stroke="#23263A" stroke-opacity="0.12" stroke-width="0.6"/>
-<path d="M34 29.5 H66 M34 36.5 H66 M34 43.5 H60 M34 50.5 H63" stroke="#23263A" stroke-opacity="0.5" stroke-width="2.6" stroke-linecap="round"/>
-<path d="M18 50 L50 68 L82 50 V80.5 A3.5 3.5 0 0 1 78.5 84 H21.5 A3.5 3.5 0 0 1 18 80.5Z" fill="url(#h-front)" filter="url(#h-shup)"/>
-<path d="M18.5 84 L44 65.5 M81.5 84 L56 65.5" stroke="#8F826B" stroke-opacity="0.25" stroke-width="0.7"/>
-<path d="M18.4 50.4 L50 68 L81.6 50.4" fill="none" stroke="#fff" stroke-opacity="0.8" stroke-width="0.7"/>
-<circle cx="50" cy="70" r="6.4" fill="url(#h-seal)" filter="url(#h-sh)"/>
-<circle cx="50" cy="70" r="3.9" fill="none" stroke="#5E1A1C" stroke-opacity="0.55" stroke-width="0.8"/>
-<path d="M47.4 67.6 A3.4 3.4 0 0 1 51.6 66.8" fill="none" stroke="#fff" stroke-opacity="0.4" stroke-width="0.8" stroke-linecap="round"/></svg>`;
+const LOGO = `<svg class="logo" viewBox="0 0 100 100" role="img" aria-label="Logo: dossiermap met een rode stempel B!">
+<defs>
+<linearGradient id="b-bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2C3260"/><stop offset="1" stop-color="#15182A"/></linearGradient>
+<radialGradient id="b-spot" cx="0.5" cy="0.3" r="0.65"><stop offset="0" stop-color="#fff" stop-opacity="0.16"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+<linearGradient id="b-kraft" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E8CB92"/><stop offset="1" stop-color="#C9A464"/></linearGradient>
+<linearGradient id="b-kraftd" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#C9A464"/><stop offset="1" stop-color="#A9844A"/></linearGradient>
+<filter id="b-sh" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="2.2" stdDeviation="2.2" flood-color="#000" flood-opacity="0.45"/></filter>
+</defs>
+<rect width="100" height="100" rx="22" fill="url(#b-bg)"/>
+<rect width="100" height="100" rx="22" fill="url(#b-spot)"/>
+<g transform="rotate(5 50 56)" filter="url(#b-sh)">
+<path d="M14 31 a4 4 0 0 1 4 -4 h19 l5 5 h40 a4 4 0 0 1 4 4 v43 a4 4 0 0 1 -4 4 h-64 a4 4 0 0 1 -4 -4z" fill="url(#b-kraftd)"/>
+<rect x="21" y="25" width="57" height="40" rx="2" fill="#F6F0E4"/>
+<path d="M26 31.5 H70 M26 37.5 H62" stroke="#CFC5B3" stroke-width="2.2" stroke-linecap="round"/>
+<rect x="13" y="40" width="74" height="46" rx="4" fill="url(#b-kraft)"/>
+<path d="M14 41 H86" stroke="#F4E2B8" stroke-width="1" opacity="0.9"/>
+</g>
+<g transform="rotate(-12 50 63)" fill="#C2302A">
+<rect x="22.5" y="47" width="55" height="32" rx="6" fill="none" stroke="#C2302A" stroke-width="3.6"/>
+<rect x="26.6" y="51.1" width="46.8" height="23.8" rx="3.4" fill="none" stroke="#C2302A" stroke-width="1.2"/>
+<path transform="translate(36.05 52.8) scale(0.62)" fill-rule="evenodd" d="M0 0 H18 C26 0 30 4 30 10 C30 14 28 16.5 25 18 C29 19.5 31 22.5 31 27 C31 33 27 36 19 36 H0 Z M9 7 V14 H17 C20 14 21.5 12.7 21.5 10.5 C21.5 8.3 20 7 17 7 Z M9 21 V29 H18 C21.5 29 23 27.6 23 25 C23 22.6 21.5 21 18 21 Z M36 2 A2 2 0 0 1 38 0 H43 A2 2 0 0 1 45 2 V22 A2 2 0 0 1 43 24 H38 A2 2 0 0 1 36 22 Z M36 30 A2 2 0 0 1 38 28 H43 A2 2 0 0 1 45 30 V34 A2 2 0 0 1 43 36 H38 A2 2 0 0 1 36 34 Z"/>
+</g>
+</svg>`;
 
 function ring(id, rest, maat, kleur, tekst = true) {
   const r = maat / 2 - 6, o = 2 * Math.PI * r;
