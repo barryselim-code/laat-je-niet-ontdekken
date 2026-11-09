@@ -1,5 +1,5 @@
 // Service worker: app-schil offline beschikbaar, data altijd live via Supabase.
-const VERSIE = 'tafelagent-v1';
+const VERSIE = 'ljno-v2';
 const SCHIL = ['./', 'index.html', 'app.css', 'app.js', 'config.js', 'lib/qrcode.js', 'manifest.webmanifest',
   'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png'];
 

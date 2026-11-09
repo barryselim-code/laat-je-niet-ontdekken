@@ -3,17 +3,18 @@ const CFG = window.TAFELAGENT_CONFIG || {};
 const SUPABASE_ESM = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';
 const WACHT = 15;          // seconden wachttijd bij beschuldigen
 const HOST_SLUIT = 120;    // host kan na 2 minuten sluiten
+const LEESTIJD = 5000;     // missie verdwijnt na 5 s vasthouden
 const $app = document.getElementById('app');
 
-let sb = null, uid = null, kanaal = null, pingTimer = null, tikTimer = null, laadTimer = null;
+let sb = null, uid = null, kanaal = null, pingTimer = null, tikTimer = null, laadTimer = null, leesTimer = null;
 
 const S = {
   view: 'laden', terug: 'home', fout: null, bezig: false,
   form: { naam: '', hostNaam: '', thema: 'kerst', moeilijkheid: 'gemengd', context: ['eten', 'drinken'], punten: true, code: '', spelerNaam: '' },
   sid: null, sessie: null, spelers: [], besch: [], deel: [], stemmen: [], overnames: [],
   missie: null, onthulling: null, tab: 'missie', offset: 0,
-  sheet: null, toasts: [], gezien: new Set(), eersteLaad: true,
-  vasthouden: false, renderWacht: false, introStap: 0, overname: null, installPrompt: null,
+  sheet: null, toasts: [], uitslag: null, gezien: new Set(), eersteLaad: true,
+  vasthouden: false, renderWacht: false, uitlegStap: 0, envelop: 'dicht', overname: null, installPrompt: null,
 };
 
 // ---------- hulpjes ----------
@@ -34,13 +35,19 @@ const deelnemers = (bid) => S.deel.filter((d) => d.beschuldiging_id === bid).sor
 const doetMee = (bid) => !!ik() && S.deel.some((d) => d.beschuldiging_id === bid && d.speler_id === ik().id);
 const openBesch = () => S.besch.filter((b) => b.status === 'open');
 const plural = (n, een, meer) => `${n} ${n === 1 ? een : meer}`;
+const tijd = (t) => t ? new Date(t).toLocaleTimeString('nl-NL', { hour: '2-digit', minute: '2-digit' }) : '';
+const namenLijst = (arr) => arr.length <= 1 ? (arr[0] || '') : arr.slice(0, -1).join(', ') + ' en ' + arr[arr.length - 1];
+const MOEIL = ['', 'Makkelijk', 'Normaal', 'Moeilijk'];
+const TINTEN = [['#B3262E', '#FFFFFF'], ['#1F5C45', '#FFFFFF'], ['#E9C774', '#3A0C0F']];
+const ini = (p, i) => { const [bg, fg] = TINTEN[(i ?? (p.volgnr - 1)) % 3]; return `<span class="ini" style="background:${bg};color:${fg}">${esc(p.naam[0]?.toUpperCase())}</span>`; };
 
 const FOUTEN = {
   niet_ingelogd: 'Geen verbinding met de server. Probeer het opnieuw.',
   naam_leeg: 'Vul je naam in.',
+  code_kort: 'Vul de 4 letters van de code in.',
   code_onbekend: 'Deze code bestaat niet (meer). Check de letters.',
   sessie_gesloten: 'Dit spel is al afgelopen.',
-  sessie_vol: 'Deze sessie zit vol (maximaal 20 spelers).',
+  sessie_vol: 'Deze avond zit vol (maximaal 20 spelers).',
   niet_host: 'Alleen de host kan dit.',
   al_gestart: 'Het spel is al gestart.',
   te_weinig_spelers: 'Je hebt minstens 3 spelers nodig.',
@@ -49,18 +56,17 @@ const FOUTEN = {
   ontmaskerd: 'Je bent ontmaskerd; je missie telt niet meer.',
   jezelf: 'Dat kan niet bij jezelf.',
   al_ontmaskerd: 'Deze speler is al ontmaskerd.',
-  nog_wachten: 'Nog even wachten, de aftelling loopt nog.',
+  nog_wachten: 'Nog even wachten, de teller loopt nog.',
   al_afgerond: 'Deze beschuldiging is al afgerond.',
-  pool_op: 'De missies zijn op. De host kan nieuwe missies importeren.',
+  pool_op: 'De missies zijn op. Vraag de host om nieuwe missies.',
   spel_loopt_niet: 'Het spel loopt nu niet.',
-  geen_speler: 'Je zit niet (meer) in deze sessie.',
+  geen_speler: 'Je zit niet (meer) aan deze tafel.',
   nog_geheim: 'De missies zijn nog geheim.',
   geen_onthulling: 'De onthulling is niet bezig.',
   onbekende_speler: 'Die speler bestaat niet (meer).',
   host_niet_verwijderen: 'De host kan zichzelf niet verwijderen.',
   niet_beschuldigd: 'Deze beschuldiging gaat niet over jou.',
   onbekend: 'Niet gevonden.',
-  code_kort: 'Vul de 4 letters van de code in.',
 };
 function foutTekst(e) {
   const m = String(e?.message || e || '');
@@ -68,191 +74,178 @@ function foutTekst(e) {
   if (/fetch|network|Failed/i.test(m)) return 'Geen verbinding. Check je internet en probeer opnieuw.';
   return 'Er ging iets mis: ' + m.slice(0, 120);
 }
-
 async function rpc(fn, args = {}) {
   const { data, error } = await sb.rpc(fn, args);
   if (error) throw error;
   return data;
 }
 
-// iconen (lijn-SVG)
+// ---------- iconen ----------
+const svg = (d, w = 1.8) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="${w}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${d}</svg>`;
 const I = {
-  vraag: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .8-1 1.5v.4"/><path d="M12 17h.01"/></svg>',
-  terug: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg>',
-  ster: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M12 2.5l2.6 6.1 6.6.5-5 4.3 1.6 6.4L12 16.4l-5.8 3.4 1.6-6.4-5-4.3 6.6-.5z"/></svg>',
-  scan: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 12h8"/></svg>',
-  oog: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>',
-  vink: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>',
-  wissel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8h13l-3-3M20 16H7l3 3"/></svg>',
-  wijs: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>',
-  missie: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/></svg>',
-  tafel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3.5 19c.6-3 2.8-5 5.5-5s4.9 2 5.5 5M14.5 14.3c.8-.3 1.6-.5 2.5-.5 2.2 0 3.9 1.5 4.4 4"/></svg>',
+  vraag: svg('<circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.6.3-1 .8-1 1.5v.4"/><path d="M12 17h.01"/>'),
+  terug: svg('<path d="M15 5l-7 7 7 7"/>'),
+  plus: svg('<path d="M12 5v14M5 12h14"/>', 2),
+  ster: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5l2.6 6.1 6.6.5-5 4.3 1.6 6.4L12 16.4l-5.8 3.4 1.6-6.4-5-4.3 6.6-.5z"/></svg>',
+  scan: svg('<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 12h8"/>'),
+  hand: svg('<path d="M9 11V6.5a1.5 1.5 0 0 1 3 0V11"/><path d="M12 10.5V9a1.5 1.5 0 0 1 3 0v2"/><path d="M15 10.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-.5a6 6 0 0 1-4.6-2.2L5 16.5a1.5 1.5 0 0 1 2.3-2L9 16V11"/>'),
+  vink: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 2.2),
+  wissel: svg('<path d="M4 8h13l-3-3M20 16H7l3 3"/>'),
+  wijs: svg('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>'),
+  missie: svg('<rect x="5" y="3.5" width="14" height="17" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/>'),
+  spelers: svg('<circle cx="9" cy="8" r="3"/><circle cx="17" cy="9" r="2.5"/><path d="M3.5 19c.6-3 2.8-5 5.5-5s4.9 2 5.5 5M14.5 14.3c.8-.3 1.6-.5 2.5-.5 2.2 0 3.9 1.5 4.4 4"/>'),
   meer: '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>',
-  duimOp: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 11v9H4v-9zM7 11l4-7c1.4 0 2.3 1 2 2.4L12.5 10H18a2 2 0 0 1 2 2.3l-1.1 6A2 2 0 0 1 17 20H7"/></svg>',
-  duimNeer: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 13V4H4v9zM7 13l4 7c1.4 0 2.3-1 2-2.4L12.5 14H18a2 2 0 0 0 2-2.3l-1.1-6A2 2 0 0 0 17 4H7"/></svg>',
-  kroon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"/></svg>',
-  vergrootglas: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/></svg>',
-  masker: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" aria-hidden="true"><path d="M3 7c3-1 6-1 9 1 3-2 6-2 9-1 0 6-2.5 10-5.5 10-1.6 0-2.5-1.5-3.5-1.5S10.1 17 8.5 17C5.5 17 3 13 3 7z"/><circle cx="8.3" cy="10.5" r="1.2"/><circle cx="15.7" cy="10.5" r="1.2"/></svg>',
+  duimOp: svg('<path d="M7 11v9H4v-9zM7 11l4-7c1.4 0 2.3 1 2 2.4L12.5 10H18a2 2 0 0 1 2 2.3l-1.1 6A2 2 0 0 1 17 20H7"/>'),
+  duimNeer: svg('<path d="M7 13V4H4v9zM7 13l4 7c1.4 0 2.3-1 2-2.4L12.5 14H18a2 2 0 0 0 2-2.3l-1.1-6A2 2 0 0 0 17 4H7"/>'),
+  kroon: svg('<path d="M3 8l4.5 4L12 5l4.5 7L21 8l-2 11H5z"/>', 1.6),
+  masker: svg('<path d="M3 7c3-1 6-1 9 1 3-2 6-2 9-1 0 6-2.5 10-5.5 10-1.6 0-2.5-1.5-3.5-1.5S10.1 17 8.5 17C5.5 17 3 13 3 7z"/><circle cx="8.3" cy="10.5" r="1.2"/><circle cx="15.7" cy="10.5" r="1.2"/>'),
+  tik: svg('<path d="M9 11V6.5a1.5 1.5 0 0 1 3 0V11"/><path d="M12 10.5V9a1.5 1.5 0 0 1 3 0v2"/><path d="M15 10.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-.5a6 6 0 0 1-4.6-2.2L5 16.5a1.5 1.5 0 0 1 2.3-2L9 16V11"/>'),
 };
+const LOGO = `<svg class="logo" viewBox="0 0 100 100" role="img" aria-label="Logo: open envelop met een brief en een lakzegel">
+<defs><linearGradient id="h-bg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#30355A"/><stop offset="1" stop-color="#191B2B"/></linearGradient>
+<radialGradient id="h-spot" cx="0.5" cy="0.32" r="0.6"><stop offset="0" stop-color="#fff" stop-opacity="0.14"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></radialGradient>
+<linearGradient id="h-back" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#B9AD97"/><stop offset="1" stop-color="#A59880"/></linearGradient>
+<linearGradient id="h-flap" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#CFC3AD"/><stop offset="1" stop-color="#E3D9C7"/></linearGradient>
+<linearGradient id="h-card" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fff"/><stop offset="1" stop-color="#ECE6DB"/></linearGradient>
+<linearGradient id="h-front" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FBF7F0"/><stop offset="1" stop-color="#E4DBCB"/></linearGradient>
+<radialGradient id="h-seal" cx="0.4" cy="0.35" r="0.7"><stop offset="0" stop-color="#B84A45"/><stop offset="1" stop-color="#7A2326"/></radialGradient>
+<filter id="h-sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="1.6" stdDeviation="1.6" flood-color="#000" flood-opacity="0.35"/></filter>
+<filter id="h-shup" x="-30%" y="-40%" width="160%" height="180%"><feDropShadow dx="0" dy="-1.4" stdDeviation="1.4" flood-color="#000" flood-opacity="0.28"/></filter>
+<filter id="h-blur" x="-20%" y="-200%" width="140%" height="500%"><feGaussianBlur stdDeviation="2"/></filter></defs>
+<rect width="100" height="100" rx="22" fill="url(#h-bg)"/><rect width="100" height="100" rx="22" fill="url(#h-spot)"/>
+<ellipse cx="50" cy="87" rx="34" ry="3.5" fill="#000" opacity="0.35" filter="url(#h-blur)"/>
+<rect x="18" y="44" width="64" height="40" rx="3.5" fill="url(#h-back)"/>
+<path d="M18 46 L50 24 L82 46Z" fill="url(#h-flap)" stroke="#fff" stroke-opacity="0.35" stroke-width="0.6" stroke-linejoin="round"/>
+<rect x="28" y="20" width="44" height="52" rx="3" fill="url(#h-card)" filter="url(#h-sh)"/>
+<rect x="31" y="23" width="38" height="46" rx="2" fill="none" stroke="#23263A" stroke-opacity="0.12" stroke-width="0.6"/>
+<path d="M34 29.5 H66 M34 36.5 H66 M34 43.5 H60 M34 50.5 H63" stroke="#23263A" stroke-opacity="0.5" stroke-width="2.6" stroke-linecap="round"/>
+<path d="M18 50 L50 68 L82 50 V80.5 A3.5 3.5 0 0 1 78.5 84 H21.5 A3.5 3.5 0 0 1 18 80.5Z" fill="url(#h-front)" filter="url(#h-shup)"/>
+<path d="M18.5 84 L44 65.5 M81.5 84 L56 65.5" stroke="#8F826B" stroke-opacity="0.25" stroke-width="0.7"/>
+<path d="M18.4 50.4 L50 68 L81.6 50.4" fill="none" stroke="#fff" stroke-opacity="0.8" stroke-width="0.7"/>
+<circle cx="50" cy="70" r="6.4" fill="url(#h-seal)" filter="url(#h-sh)"/>
+<circle cx="50" cy="70" r="3.9" fill="none" stroke="#5E1A1C" stroke-opacity="0.55" stroke-width="0.8"/>
+<path d="M47.4 67.6 A3.4 3.4 0 0 1 51.6 66.8" fill="none" stroke="#fff" stroke-opacity="0.4" stroke-width="0.8" stroke-linecap="round"/></svg>`;
+
+function ring(id, rest, maat, kleur, tekst = true) {
+  const r = maat / 2 - 6, o = 2 * Math.PI * r;
+  return `<div class="ring" style="width:${maat}px;height:${maat}px"><svg viewBox="0 0 ${maat} ${maat}" aria-hidden="true">
+    <circle cx="${maat / 2}" cy="${maat / 2}" r="${r}" fill="none" stroke="var(--line)" stroke-width="${maat > 100 ? 8 : 4}"/>
+    <circle data-ring="${id}" data-omtrek="${o}" cx="${maat / 2}" cy="${maat / 2}" r="${r}" fill="none" stroke="${kleur}" stroke-width="${maat > 100 ? 8 : 4}" stroke-linecap="round" stroke-dasharray="${o}" stroke-dashoffset="${o * (1 - rest / WACHT)}"/></svg>
+    ${tekst ? `<b data-wacht="${id}" style="font-size:${Math.round(maat / 3.2)}px">${Math.ceil(rest)}</b>` : ''}</div>`;
+}
 
 // ---------- render ----------
 function render() {
   if (S.vasthouden) { S.renderWacht = true; return; }
-  const thema = S.sessie?.thema || S.form.thema;
-  document.body.dataset.thema = thema === 'kerst' ? 'kerst' : 'algemeen';
-  const views = { laden: vLaden, home: vHome, nieuw: vNieuw, deelnemen: vDeelnemen, uitleg: vUitleg, overname: vOvernameWacht, intro: vIntro, sessie: vSessie, weg: vWeg };
-  const actiefEl = document.activeElement;
-  const focusId = actiefEl && actiefEl.id;
-  const sel = focusId && actiefEl.selectionStart != null ? [actiefEl.selectionStart, actiefEl.selectionEnd] : null;
-  $app.innerHTML = (views[S.view] || vHome)() + vOverlay() + vSheet() + vToasts();
-  if (focusId) {
-    const el = document.getElementById(focusId);
-    if (el) { el.focus({ preventScroll: true }); if (sel && el.setSelectionRange) try { el.setSelectionRange(...sel); } catch {} }
-  }
+  const views = { laden: vLaden, home: vHome, nieuw: vNieuw, deelnemen: vDeelnemen, speluitleg: vSpeluitleg, overname: vOvernameWacht, sessie: vSessie, weg: vWeg };
+  const ae = document.activeElement, focusId = ae && ae.id;
+  const sel = focusId && ae.selectionStart != null ? [ae.selectionStart, ae.selectionEnd] : null;
+  const html = (views[S.view] || vHome)();
+  document.body.className = /class="screen licht/.test(html.slice(0, 80)) ? 'licht-bg' : /class="feest/.test(html.slice(0, 80)) ? 'feest-bg' : '';
+  $app.innerHTML = html + vOverlay() + vUitslag() + vSheet() + vToasts();
+  if (focusId) { const el = document.getElementById(focusId); if (el) { el.focus({ preventScroll: true }); if (sel && el.setSelectionRange) try { el.setSelectionRange(...sel); } catch {} } }
   if (S.view === 'sessie' && S.sessie?.status === 'lobby') tekenQR();
   tik();
 }
 
-function vLaden() {
-  return `<main class="screen"><div class="center-msg"><div class="spinner" role="status" aria-label="Laden"></div></div></main>`;
-}
+function vLaden() { return `<main class="screen"><div class="center-msg"><div class="spinner" role="status" aria-label="Laden"></div></div></main>`; }
 
 function vHome() {
   const ios = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.navigator.standalone;
-  return `<main class="screen home">
-    <div class="home-top"><button class="iconbtn" data-a="view" data-v="uitleg" aria-label="Spelregels">${I.vraag}</button></div>
-    <div class="home-hero">
-      <span style="color:var(--accent);width:44px;height:44px;display:block">${I.ster}</span>
-      <h1>Laat je niet ontdekken!</h1>
-      <p>Iedereen aan tafel krijgt een geheime missie. Voer hem ongemerkt uit, en ontmasker de rest.</p>
-      <span class="badge"><span class="dot"></span>Thema: Kerst</span>
+  return `<main class="screen licht" style="padding-top:0">
+    <div class="home-kop stippen">
+      <div style="display:flex;justify-content:flex-end"><button class="iconbtn" data-a="speluitleg" aria-label="Spelregels">${I.vraag}</button></div>
+      <div class="home-hero">${LOGO}
+        <h1>Laat je niet<br>ontdekken!</h1>
+        <p>Iedereen een geheime missie. Wie houdt het vol tot het dessert?</p>
+        <span class="label-feest">Kerstspecial</span></div>
     </div>
-    <div class="home-actions">
+    <div class="home-acties">
       ${S.fout ? `<p class="error" role="alert">${esc(S.fout)}</p>` : ''}
-      <button class="btn primary" data-a="view" data-v="nieuw">Nieuwe sessie</button>
-      <button class="btn" data-a="view" data-v="deelnemen">Deelnemen met code</button>
-      ${S.installPrompt ? `<button class="btn ghost small" data-a="installeer">App installeren</button>` : ''}
+      <button class="btn rood" data-a="view" data-v="nieuw">${I.plus}Nieuwe avond starten</button>
+      <button class="btn groen-rand" data-a="view" data-v="deelnemen">Aanschuiven met code</button>
+      ${S.installPrompt ? `<button class="btn ghost klein" data-a="installeer">App installeren</button>` : ''}
       <p class="foot-note">3 tot 20 spelers · één telefoon per persoon${ios ? '<br>Installeren: Deel-knop › Zet op beginscherm' : ''}</p>
-    </div>
-  </main>`;
+    </div></main>`;
 }
 
 function vNieuw() {
-  const f = S.form;
-  const pr = (b) => (b ? 'true' : 'false');
+  const f = S.form, pr = (b) => (b ? 'true' : 'false');
   const ctx = [['eten', 'Er wordt gegeten'], ['drinken', 'Er wordt gedronken'], ['kinderen', 'Kinderen aan tafel'], ['gastheer', 'Ik ben de gastheer']];
-  return `<main class="screen">
-    <div class="topbar"><button class="iconbtn" data-a="view" data-v="home" aria-label="Terug">${I.terug}</button><h1>Nieuwe sessie</h1></div>
+  return `<main class="screen licht">
+    <div class="kop-terug"><button class="iconbtn" data-a="view" data-v="home" aria-label="Terug">${I.terug}</button></div>
+    <div style="display:flex;align-items:center;gap:10px;padding:0 24px 4px"><h1 class="titel-serif" style="color:var(--kerstrood)">Nieuwe avond</h1><span style="width:24px;height:24px;color:#C99A2E">${I.ster}</span></div>
     <div class="body">
       <div class="field"><label class="label" for="f-naam">Naam van de avond</label>
         <input class="input" id="f-naam" data-f="naam" value="${esc(f.naam)}" placeholder="Kerstavond 2026" maxlength="40" autocomplete="off"></div>
       <div class="field"><label class="label" for="f-host">Jouw naam aan tafel</label>
         <input class="input" id="f-host" data-f="hostNaam" value="${esc(f.hostNaam)}" placeholder="Bijv. Barry" maxlength="20" autocomplete="given-name"></div>
-      <div class="field"><span class="label">Thema</span>
-        <div class="choice-grid">
-          <button class="choice" data-a="set" data-k="thema" data-val="kerst" aria-pressed="${pr(f.thema === 'kerst')}">${f.thema === 'kerst' ? '<span class="dot"></span>' : ''}Kerst</button>
-          <button class="choice" data-a="set" data-k="thema" data-val="algemeen" aria-pressed="${pr(f.thema === 'algemeen')}">${f.thema === 'algemeen' ? '<span class="dot"></span>' : ''}Algemeen</button>
-        </div></div>
-      <div class="field"><span class="label">Moeilijkheid</span>
-        <div class="seg">${['makkelijk', 'gemengd', 'moeilijk'].map((m) => `<button data-a="set" data-k="moeilijkheid" data-val="${m}" aria-pressed="${pr(f.moeilijkheid === m)}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</div></div>
-      <div class="field"><span class="label">Wat gebeurt er aan tafel?</span>
-        <div class="chips">${ctx.map(([k, t]) => `<button class="chip" data-a="ctx" data-val="${k}" aria-pressed="${pr(f.context.includes(k))}">${t}</button>`).join('')}</div></div>
-      <div class="toggle-row"><div><b>Punten tellen</b><span>Uit = alleen gehaald of niet</span></div>
-        <button class="toggle" data-a="punten" aria-pressed="${pr(f.punten)}" aria-label="Punten tellen"></button></div>
+      <div class="field"><span class="label">Thema</span><div class="tegels">
+        <button class="tegel" data-a="set" data-k="thema" data-val="kerst" aria-pressed="${pr(f.thema === 'kerst')}">${f.thema === 'kerst' ? `<span style="color:var(--feestgoud)">${I.ster}</span>` : ''}Kerst</button>
+        <button class="tegel" data-a="set" data-k="thema" data-val="algemeen" aria-pressed="${pr(f.thema === 'algemeen')}">${f.thema === 'algemeen' ? `<span style="color:var(--feestgoud)">${I.ster}</span>` : ''}Algemeen</button></div></div>
+      <div class="field"><span class="label">Moeilijkheid</span><div class="seg">${['makkelijk', 'gemengd', 'moeilijk'].map((m) => `<button data-a="set" data-k="moeilijkheid" data-val="${m}" aria-pressed="${pr(f.moeilijkheid === m)}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</div></div>
+      <div class="field"><span class="label">Wat gebeurt er aan tafel?</span><div class="chips">${ctx.map(([k, t]) => `<button class="chip" data-a="ctx" data-val="${k}" aria-pressed="${pr(f.context.includes(k))}">${t}</button>`).join('')}</div></div>
+      <div class="toggle-row"><div><b>Punten tellen</b><span>Uit = alleen gehaald of niet</span></div><button class="toggle" data-a="punten" aria-pressed="${pr(f.punten)}" aria-label="Punten tellen"></button></div>
       ${S.fout ? `<p class="error" role="alert">${esc(S.fout)}</p>` : ''}
     </div>
-    <div class="foot"><button class="btn primary" data-a="maak" ${S.bezig ? 'disabled' : ''}>${S.bezig ? 'Bezig…' : 'Sessie openen'}</button></div>
-  </main>`;
+    <div class="foot"><button class="btn rood" data-a="maak" ${S.bezig ? 'disabled' : ''}>${S.bezig ? 'Bezig…' : 'Tafel dekken'}</button></div></main>`;
 }
 
 function vDeelnemen() {
-  const f = S.form;
-  const c = (f.code + '    ').slice(0, 4);
-  return `<main class="screen">
-    <div class="topbar"><button class="iconbtn" data-a="view" data-v="home" aria-label="Terug">${I.terug}</button><h1>Deelnemen</h1></div>
+  const f = S.form, c = (f.code + '    ').slice(0, 4);
+  return `<main class="screen licht">
+    <div class="kop-terug"><button class="iconbtn" data-a="view" data-v="home" aria-label="Terug">${I.terug}</button></div>
+    <div style="display:flex;flex-direction:column;gap:6px;padding:0 24px 4px"><h1 class="titel-serif" style="color:var(--den)">Schuif aan</h1><span style="font-size:15px;color:var(--ink2)">De host heeft de code op zijn scherm.</span></div>
     <div class="body" style="gap:28px;padding-top:24px">
-      <div class="field" style="gap:12px"><label class="label" for="c0">Code van de sessie</label>
-        <div class="codeboxes">${[0, 1, 2, 3].map((i) => `<input class="codebox" id="c${i}" data-code="${i}" aria-label="Letter ${i + 1}" maxlength="1" inputmode="text" autocapitalize="characters" autocomplete="off" value="${esc(c[i].trim())}">`).join('')}</div>
-        ${S.scannen ? `<video class="scan" id="scan" playsinline muted></video><button class="btn small" data-a="stopscan">Stoppen met scannen</button>`
-          : `<button class="btn small" data-a="scan">${I.scan}Scan de QR-code</button>`}
-      </div>
+      <div class="field" style="gap:12px"><label class="label" for="c0">Code van de avond</label>
+        <div class="codeboxes">${[0, 1, 2, 3].map((i) => `<input class="codebox" id="c${i}" data-code="${i}" aria-label="Letter ${i + 1}" maxlength="1" autocapitalize="characters" autocomplete="off" value="${esc(c[i].trim())}">`).join('')}</div>
+        ${S.scannen ? `<video class="scan" id="scan" playsinline muted></video><button class="btn klein licht-rand" data-a="stopscan">Stoppen met scannen</button>`
+          : `<button class="btn klein groen-rand" data-a="scan">${I.scan}Scan de QR-code</button>`}</div>
       <div class="field"><label class="label" for="f-sp">Je naam aan tafel</label>
         <input class="input" id="f-sp" data-f="spelerNaam" value="${esc(f.spelerNaam)}" placeholder="Bijv. Fleur" maxlength="20" autocomplete="given-name">
         <span class="hint">Zo heet je in de lijst en bij de onthulling.</span></div>
       ${S.fout ? `<p class="error" role="alert">${esc(S.fout)}</p>` : ''}
     </div>
-    <div class="foot"><button class="btn primary" data-a="join" ${S.bezig ? 'disabled' : ''}>${S.bezig ? 'Bezig…' : 'Aanschuiven'}</button></div>
-  </main>`;
+    <div class="foot"><button class="btn rood" data-a="join" ${S.bezig ? 'disabled' : ''}>${S.bezig ? 'Bezig…' : 'Aanschuiven'}</button></div></main>`;
 }
 
 function vOvernameWacht() {
-  return `<main class="screen"><div class="center-msg">
-    <div class="spinner" role="status"></div>
-    <h2>Wachten op de host</h2>
-    <p>De host moet bevestigen dat jij ${esc(S.overname?.naam)} bent op een nieuw toestel.</p>
-    <button class="btn ghost small" data-a="overname-stop" style="width:auto">Annuleren</button>
-  </div></main>`;
+  return `<main class="screen licht"><div class="center-msg"><div class="spinner" role="status"></div>
+    <h2>Wachten op de host</h2><p>De host moet bevestigen dat jij ${esc(S.overname?.naam)} bent op een nieuw toestel.</p>
+    <button class="btn ghost klein" data-a="overname-stop" style="width:auto">Annuleren</button></div></main>`;
 }
-
 function vWeg() {
-  return `<main class="screen"><div class="center-msg">
-    <h2>${esc(S.fout || 'Je zit niet meer in deze sessie')}</h2>
-    <button class="btn primary" data-a="naar-home" style="max-width:280px">Naar het begin</button>
-  </div></main>`;
+  return `<main class="screen licht"><div class="center-msg"><h2>${esc(S.fout || 'Je zit niet meer aan deze tafel')}</h2>
+    <button class="btn rood" data-a="naar-home" style="max-width:280px">Naar het begin</button></div></main>`;
 }
 
-const INTRO = [
-  ['Je krijgt een geheime missie', 'Voer hem ongemerkt uit vanaf je stoel. Houd je scherm vast om je missie te zien; loslaten verbergt hem weer.'],
-  ['Verdenk je iemand?', 'Druk op Beschuldig naast zijn naam en zeg hardop wat je denkt dat zijn missie is. Anderen kunnen meedoen.'],
-  ['Blijf onder de radar', 'Ook na voltooien kun je nog ontmaskerd worden. Aan het eind onthult de app alle missies.'],
-];
-function vIntro() {
-  const i = S.introStap, [t, p] = INTRO[i];
-  return `<main class="screen">
-    <div class="topbar" style="justify-content:flex-end"><button class="btn ghost small" style="width:auto" data-a="intro-klaar">Overslaan</button></div>
-    <div class="intro"><span class="num">${i + 1} van 3</span><h2>${t}</h2><p>${p}</p></div>
-    <div class="foot"><div class="dots" aria-hidden="true">${INTRO.map((_, j) => `<i class="${j === i ? 'on' : ''}"></i>`).join('')}</div>
-      <button class="btn primary" data-a="${i < 2 ? 'intro-volgende' : 'intro-klaar'}">${i < 2 ? 'Volgende' : 'Begrepen'}</button></div>
-  </main>`;
-}
+const PUNTEN = [['Missie voltooid (makkelijk / normaal / moeilijk)', '+1 / +2 / +3'], ['Eerste beschuldiger, klopt', '+2'], ['Meedoener, klopt', '+1'],
+  ['Eerste beschuldiger, klopt niet', '−2'], ['Meedoener, klopt niet', '−1'], ['Zelf ontmaskerd', '0 voor je missie']];
 
-function vUitleg() {
+function vSpeluitleg() {
   return `<main class="screen">
-    <div class="topbar"><button class="iconbtn" data-a="uitleg-terug" aria-label="Terug">${I.terug}</button><h1>Spelregels</h1></div>
-    <article class="uitleg">
+    <div class="kop-terug"><button class="iconbtn" data-a="speluitleg-terug" aria-label="Terug">${I.terug}</button></div>
+    <article class="speluitleg"><h1>Spelregels</h1>
       <p>Iedereen aan tafel krijgt een unieke geheime missie die je ongemerkt vanaf je stoel uitvoert. Wie betrapt wordt, verliest zijn missie; wie hem haalt zonder ontmaskerd te worden, scoort.</p>
-      <h2>Verloop van een avond</h2>
-      <ol><li>De host maakt een sessie aan en kiest thema en moeilijkheid.</li>
-        <li>Spelers doen mee met de code of QR-code en vullen hun naam in.</li>
-        <li>De host start het spel; iedereen krijgt tegelijk een unieke missie.</li>
-        <li>Je mag één keer je missie wisselen (joker) in de eerste 10 minuten.</li>
-        <li>Voer je missie uit en tik op Voltooid zodra het gelukt is.</li>
-        <li>Verdenk je iemand, druk dan op Beschuldig naast zijn naam; anderen kunnen meedoen.</li>
-        <li>De host beëindigt het spel; de app onthult alle missies één voor één.</li></ol>
-      <h2>Voltooien</h2>
-      <ul><li>Je tikt zelf op Voltooid en kiest eventueel wie er getuige of slachtoffer was.</li>
-        <li>Bij de onthulling stemt de tafel met duim omhoog of omlaag of het echt gebeurd is. Meer duimen omlaag dan omhoog: punten vervallen.</li>
-        <li>Na voltooien ben je niet veilig: tot het einde kun je nog ontmaskerd worden.</li></ul>
+      <h2>De avond in 4 stappen</h2>
+      <ol><li>De host start een nieuwe avond; iedereen schuift aan met de code of QR-code.</li>
+        <li>De host deelt de missies uit. Je leest je missie door je vinger erop te houden; na 5 seconden verdwijnt hij vanzelf.</li>
+        <li>Voer je missie ongemerkt uit en tik op Voltooid. Je blijft tot het einde ontmaskerbaar. Joker: één keer wisselen in de eerste 10 minuten.</li>
+        <li>De host beëindigt het spel en onthult alle missies één voor één.</li></ol>
       <h2>Beschuldigen en meedoen</h2>
-      <ol><li>Druk op Beschuldig naast iemands naam en zeg hardop wat je denkt dat zijn missie is.</li>
-        <li>Iedereen krijgt een melding en kan meedoen.</li>
-        <li>Na elke beschuldiging en elke meedoener loopt een wachttijd van 15 seconden opnieuw, zodat er ruimte is voor discussie.</li>
-        <li>Daarna kiest de beschuldigde: Toegeven (ontmaskerd, missie mislukt) of Afwijzen (speelt door).</li></ol>
+      <ol><li>Tik bij Spelers op Beschuldig en zeg aan tafel hardop wat je denkt dat de missie is.</li>
+        <li>Iedereen kan meedoen. Er loopt een teller van 15 seconden; elke meedoener zet hem terug op 15. Terugtrekken kan niet.</li>
+        <li>Op 0 kiest de verdachte: Toegeven (ontmaskerd) of Afwijzen (speelt door).</li></ol>
       <h2>Wanneer klopt een beschuldiging?</h2>
-      <p>Als het hardop genoemde vermoeden de kern van de missie raakt; letterlijk hoeft niet. De beschuldigde beoordeelt dit zelf. Bij de onthulling ziet iedereen elke afgewezen beschuldiging naast de echte missie, dus liegen valt alsnog op.</p>
-      <p class="example">Voorbeeld: is de missie "leg mes en vork omgewisseld tot het eerste gerecht op je bord ligt" en zegt iemand "jouw vork ligt aan de verkeerde kant", dan ben je ontmaskerd.</p>
+      <p>Als het hardop genoemde vermoeden de kern van de missie raakt; letterlijk hoeft niet. De verdachte beoordeelt dit zelf, maar bij de onthulling bespreekt de tafel elke afgewezen beschuldiging.</p>
+      <p class="vb">Voorbeeld: is de missie "leg mes en vork omgewisseld tot het eerste gerecht op je bord ligt" en zegt iemand "jouw vork ligt aan de verkeerde kant", dan ben je ontmaskerd.</p>
+      <h2>Aan het eind van de avond</h2>
+      <ul><li>Per speler stemt de tafel: heeft hij zijn missie echt gedaan? Meer nee dan ja = geen missiepunten.</li>
+        <li>Per afgewezen beschuldiging stemt de tafel: raakte die de kern? Meer ja dan nee = alsnog ontmaskerd.</li></ul>
       <h2>Punten</h2>
-      <table><tbody>
-        <tr><td>Missie voltooid (makkelijk / normaal / moeilijk)</td><td>+1 / +2 / +3</td></tr>
-        <tr><td>Eerste beschuldiger, beschuldiging klopt</td><td>+2</td></tr>
-        <tr><td>Meedoener, beschuldiging klopt</td><td>+1</td></tr>
-        <tr><td>Eerste beschuldiger, klopt niet</td><td>−2</td></tr>
-        <tr><td>Meedoener, klopt niet</td><td>−1</td></tr>
-        <tr><td>Zelf ontmaskerd</td><td>0 voor je missie</td></tr>
-      </tbody></table>
-      <p>Wie de meeste punten heeft, is Topagent van de avond.</p>
-    </article>
-  </main>`;
+      <table><tbody>${PUNTEN.map(([a, b]) => `<tr><td>${a}</td><td>${b}</td></tr>`).join('')}</tbody></table>
+      <p>De meeste punten? Dan ben jij de Topagent van de avond.</p>
+    </article></main>`;
 }
 
 // ----- in een sessie -----
@@ -260,7 +253,10 @@ function vSessie() {
   const s = S.sessie;
   if (!s) return vLaden();
   if (s.status === 'lobby') return vLobby();
-  if (s.status === 'spel') return vSpel();
+  if (s.status === 'spel') {
+    if (!ls.get('ceremonie.' + S.sid)) return S.uitlegStap < 3 ? vUitleg() : vEnvelop();
+    return vSpel();
+  }
   if (s.status === 'onthulling') return isHost() ? vOnthullingHost() : vOnthullingSpeler();
   return vScorebord();
 }
@@ -270,267 +266,354 @@ function hostBanners() {
   let h = '';
   for (const o of S.overnames.filter((x) => x.status === 'open')) {
     h += `<div class="banner"><p><b>${esc(naam(o.speler_id))}</b> wil verder op een nieuw toestel.</p>
-      <button class="pill-btn" data-a="overname-ja" data-id="${o.id}">Goed</button>
-      <button class="pill-btn" data-a="overname-nee" data-id="${o.id}" aria-label="Weigeren">Nee</button></div>`;
+      <button class="pill" data-a="overname-ja" data-id="${o.id}">Goed</button><button class="pill" data-a="overname-nee" data-id="${o.id}">Nee</button></div>`;
   }
-  if (S.sessie.host_melding) {
-    h += `<div class="banner"><p>${esc(S.sessie.host_melding)}</p><button class="pill-btn" data-a="melding-weg">Oké</button></div>`;
-  }
+  if (S.sessie.host_melding) h += `<div class="banner"><p>${esc(S.sessie.host_melding)}</p><button class="pill" data-a="melding-weg">Oké</button></div>`;
   return h;
 }
 
 function vLobby() {
   const s = S.sessie, me = ik(), host = isHost(), sp = actief();
-  return `<main class="screen">
-    <div class="topbar" style="padding:20px 24px 8px"><h1><span class="sub">Lobby</span>${esc(s.naam)}</h1>
-      ${host ? '<span class="badge">Host</span>' : ''}
-      <button class="iconbtn" data-a="view-uitleg" aria-label="Spelregels">${I.vraag}</button></div>
-    ${hostBanners()}
-    <div class="codecard">
-      <div class="qr" id="qr" role="img" aria-label="QR-code om deel te nemen"></div>
-      <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
-        <span class="hint" style="color:var(--muted)">Code</span>
-        <span class="bigcode">${esc(s.code)}</span>
-        <span class="hint">Scan, of typ de code in de app</span>
+  const laatste = sp.length > 1 ? Math.max(...sp.map((p) => p.volgnr)) : -1;
+  return `<main class="screen licht">
+    <div class="lobby-kaart stippen">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><span class="naam-avond">${esc(s.naam)}</span>
+        <span style="display:flex;align-items:center;gap:4px">${host ? '<span class="badge-host">Host</span>' : ''}<button class="iconbtn" style="color:var(--creme)" data-a="speluitleg" aria-label="Spelregels">${I.vraag}</button></span></div>
+      <div style="display:flex;align-items:center;gap:18px">
+        <div class="qr" id="qr" role="img" aria-label="QR-code om aan te schuiven"></div>
+        <div style="display:flex;flex-direction:column;gap:4px"><span style="font-size:13px;color:#FBE7DA">Code</span><span class="bigcode">${esc(s.code)}</span><span style="font-size:13px;color:#FBE7DA">Scan of typ de code</span></div>
       </div>
+      <span aria-hidden="true" style="position:absolute;right:18px;bottom:16px;width:34px;height:34px;color:var(--feestgoud);opacity:.7;transform:rotate(14deg)">${I.ster}</span>
     </div>
-    <div class="section-head"><h2>Aan tafel</h2><span>${plural(sp.length, 'speler', 'spelers')}</span></div>
-    <div class="list" style="flex-grow:1">
-      ${sp.map((p) => `<div class="row"><span class="avatar">${esc(p.naam[0]?.toUpperCase())}</span>
-        <span class="name">${esc(p.naam)}</span>
-        <span class="tag">${p.id === s.host_id ? 'host' : ''}${p.id === me?.id ? (p.id === s.host_id ? ' · jij' : 'jij') : ''}</span>
-        ${host && p.id !== me?.id ? `<button class="iconbtn" data-a="spelermenu" data-id="${p.id}" aria-label="Opties voor ${esc(p.naam)}">${I.meer}</button>` : ''}</div>`).join('')}
-      ${sp.length < 20 ? `<div class="row wait"><span class="avatar"></span>Wachten op meer spelers…</div>` : ''}
+    ${hostBanners()}
+    <div class="sectie"><h2>Aan tafel</h2><span>${plural(sp.length, 'speler', 'spelers')}</span></div>
+    <div class="raster" style="flex-grow:1">
+      ${sp.map((p, i) => { const tik = host && p.id !== me?.id; return `<${tik ? `button data-a="spelermenu" data-id="${p.id}" aria-label="Opties voor ${esc(p.naam)}" style="font:inherit;color:inherit;text-align:left"` : 'div'} class="speler-kaart">${ini(p, i)}<span class="naam">${esc(p.naam)}${p.id === me?.id ? ' <span style="font-weight:400;color:var(--ink2)">(jij)</span>' : ''}</span>
+        ${p.volgnr === laatste && p.id !== me?.id ? '<span class="nieuw">nieuw</span>' : ''}</${tik ? 'button' : 'div'}>`; }).join('')}
+      ${sp.length < 20 ? `<div class="speler-kaart leeg"><span class="ini" style="border:1.5px dashed #D9C6AA"></span>Nog iemand?</div>` : ''}
     </div>
     <div class="foot">
       ${S.fout ? `<p class="error" role="alert">${esc(S.fout)}</p>` : ''}
-      ${host ? `<button class="btn primary" data-a="start" ${sp.length < 3 || S.bezig ? 'disabled' : ''}>${S.bezig ? 'Missies uitdelen…' : 'Start het spel'}</button>
-        <p class="foot-note">${sp.length < 3 ? `Nog ${3 - sp.length} speler${3 - sp.length === 1 ? '' : 's'} nodig.` : 'Iedereen krijgt tegelijk een missie.'}</p>`
-        : `<div class="row wait" style="justify-content:center"><div class="spinner" style="width:18px;height:18px;border-width:2px"></div>Wachten op de host…</div>`}
+      ${host ? `<button class="btn rood" data-a="start" ${sp.length < 3 || S.bezig ? 'disabled' : ''}><span style="width:20px;height:20px;color:var(--feestgoud)">${I.ster}</span>${S.bezig ? 'Missies uitdelen…' : 'Deel de missies uit'}</button>
+        <p class="foot-note">${sp.length < 3 ? `Nog ${3 - sp.length} speler${3 - sp.length === 1 ? '' : 's'} nodig.` : 'Eerst een korte uitleg, dan je missie. Daarna wordt je scherm donker en discreet.'}</p>`
+        : `<div style="display:flex;align-items:center;justify-content:center;gap:10px;color:var(--ink2);font-size:14px;padding:12px"><div class="spinner" style="width:18px;height:18px;border-width:2px"></div>Wachten tot de host de missies uitdeelt…</div>`}
+    </div></main>`;
+}
+
+// ----- uitleg 1-3 en envelop -----
+function vUitleg() {
+  const i = S.uitlegStap;
+  const stapjes = `<div class="stapjes" aria-label="Stap ${i + 1} van 3">${[0, 1, 2].map((j) => `<i class="${j === i ? 'aan' : ''}"></i>`).join('')}</div>`;
+  const kop = `<div style="display:flex;align-items:center;justify-content:space-between;height:44px">${stapjes}${i < 2 ? `<button class="btn ghost klein" style="width:auto;padding:0 4px" data-a="uitleg-klaar">Overslaan</button>` : ''}</div>`;
+  let inhoud = '', knop = '';
+  if (i === 0) {
+    inhoud = `<span class="kicker" style="margin-top:8px">Zo werkt het · 1 van 3</span><h1 class="titel-serif" style="font-size:32px;margin-top:6px">Jouw geheime missie</h1>
+      <div class="mock"><div class="vak"><span style="font-size:11px;color:var(--faint)">Jouw missie</span><span class="balk" style="width:90%"></span><span class="balk" style="width:64%"></span>
+        <span style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)"><span style="width:16px;height:16px">${I.hand}</span>Houd vast om te lezen</span><span class="nr" style="position:absolute;right:-6px;top:-6px">1</span></div>
+        <div class="knopjes"><span>Voltooid<span class="nr">3</span></span><span>Joker<span class="nr">2</span></span><span style="color:var(--rood-t)">Beschuldig</span></div></div>
+      <ol class="punten-lijst"><li><span class="nr">1</span><span><b>Lezen = vasthouden.</b> Je missie is verborgen. Houd je vinger erop om hem te lezen; laat je los of doe je 5 seconden niets, dan is hij weer weg.</span></li>
+        <li><span class="nr">2</span><span><b>Joker.</b> Past je missie echt niet? Je mag hem één keer wisselen, alleen in de eerste 10 minuten.</span></li>
+        <li><span class="nr">3</span><span><b>Gelukt? Voltooid.</b> Voer je missie uit zonder dat iemand het doorheeft en tik dan op Voltooid. Je bent daarna niet veilig: tot het einde kun je nog ontmaskerd worden.</span></li></ol>`;
+    knop = `<button class="btn rood" data-a="uitleg-volgende">Volgende: beschuldigen</button>`;
+  } else if (i === 1) {
+    inhoud = `<span class="kicker" style="margin-top:8px">Zo werkt het · 2 van 3</span><h1 class="titel-serif" style="font-size:32px;margin-top:6px">Beschuldigen en meedoen</h1>
+      <div class="mock">
+        <div style="position:relative;display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:12px;background:var(--s1)"><span class="ini" style="width:28px;height:28px;background:var(--s2);color:var(--muted);font-size:12px">J</span><span style="flex-grow:1;font-size:14px">Joris</span><span class="pill" style="height:30px;font-size:12px">Beschuldig</span><span class="nr" style="position:absolute;right:-6px;top:-8px">1</span></div>
+        <div style="position:relative;display:flex;align-items:center;gap:10px;padding:10px;border-radius:12px;background:var(--s3);border:1px solid var(--line2)">${ring('mock', 12, 40, 'var(--goud)')}<span style="flex-grow:1;font-size:13px"><b>Sanne beschuldigt Joris</b><br><span style="color:var(--muted)">Mehmet doet mee</span></span><span class="pill meedoen" style="height:30px;font-size:12px">Meedoen</span><span class="nr" style="position:absolute;right:-6px;top:-8px">2</span></div>
+        <div style="position:relative" class="twee"><span class="btn klein toegeven" style="height:38px;font-size:13px">Toegeven</span><span class="btn klein licht-knop" style="height:38px;font-size:13px">Afwijzen</span><span class="nr" style="position:absolute;right:-6px;top:-8px">3</span></div></div>
+      <ol class="punten-lijst"><li><span class="nr">1</span><span><b>Beschuldig en zeg het hardop.</b> Tik bij Spelers op Beschuldig en zeg aan tafel wat je denkt dat de missie is.</span></li>
+        <li><span class="nr">2</span><span><b>Iedereen kan meedoen.</b> Er loopt een teller van 15 seconden. Elke keer dat iemand meedoet, begint hij opnieuw. Terugtrekken kan niet.</span></li>
+        <li><span class="nr">3</span><span><b>De verdachte kiest.</b> Op 0: toegeven = ontmaskerd, afwijzen = hij speelt door. Het klopt als het de kern van de missie raakt; letterlijk hoeft niet.</span></li></ol>
+      <p style="margin:14px 0 0;font-size:13px;color:var(--ink2)">Liegen valt op: bij de onthulling ziet iedereen elke afgewezen beschuldiging naast de echte missie.</p>`;
+    knop = `<button class="btn rood" data-a="uitleg-volgende">Volgende: punten</button>`;
+  } else {
+    inhoud = `<span class="kicker" style="margin-top:8px">Zo werkt het · 3 van 3</span><h1 class="titel-serif" style="font-size:32px;margin-top:6px">Punten en de onthulling</h1>
+      <div class="ptabel">${PUNTEN.map(([a, b]) => `<div><span>${a}</span><b>${b}</b></div>`).join('')}</div>
+      <p style="margin:10px 0 0;font-size:13px;color:var(--ink2)">Ontmaskerd betekent ook: geen punten voor je missie, zelfs als je hem al had voltooid.</p>
+      <div class="eindblok stippen"><b>Aan het eind van de avond</b>
+        <span><b style="color:#fff">Per speler stemt de tafel:</b> heeft hij zijn missie echt gedaan? Meer nee dan ja = geen missiepunten.</span>
+        <span><b style="color:#fff">Afgewezen beschuldigingen worden gecheckt:</b> vindt de tafel dat hij had moeten toegeven, dan telt hij alsnog als ontmaskerd.</span>
+        <span>De meeste punten? Dan ben jij de <b>Topagent van de avond</b>.</span></div>
+      <p style="margin:10px 0 0;font-size:13px;color:var(--ink2)">Alles teruglezen kan tijdens het spel via het vraagteken.</p>`;
+    knop = `<button class="btn rood" data-a="uitleg-klaar">Geef mij mijn missie</button>`;
+  }
+  return `<main class="screen licht uitleg-slide">${kop}${inhoud}<div style="flex-grow:1;min-height:18px"></div>${knop}</main>`;
+}
+
+function vEnvelop() {
+  const f = S.envelop, open = f !== 'dicht', donker = f === 'donker';
+  return `<main class="envelop-scherm ${donker ? 'donker' : ''}">
+    <div class="stippen-laag stippen" aria-hidden="true"></div>
+    <div class="env-tekst"><span class="k">${donker ? `${esc(S.sessie.naam)} · ${esc(S.sessie.code)}` : 'De missies zijn uitgedeeld'}</span>
+      <h1>${donker ? 'Alleen voor jouw ogen' : 'Je missie is binnen'}</h1>
+      <p>${donker ? 'Vanaf nu is je scherm donker en rustig. Houd je missie vast om hem te lezen; laat los en hij is weg.' : 'Iedereen aan tafel krijgt er nu een. Niet bij je buren kijken!'}</p></div>
+    <div class="env ${open ? 'open' : ''}">
+      <svg width="260" height="170" viewBox="0 0 260 170" aria-hidden="true" style="z-index:1;filter:drop-shadow(0 14px 22px rgba(0,0,0,.35))"><defs><linearGradient id="mo-back" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#B9AD97"/><stop offset="1" stop-color="#A59880"/></linearGradient></defs><rect width="260" height="170" rx="8" fill="url(#mo-back)"/></svg>
+      <div class="brief" aria-hidden="true"><b>Strikt geheim</b><i style="width:100%"></i><i style="width:100%"></i><i style="width:80%"></i><i style="width:90%"></i></div>
+      <svg width="260" height="170" viewBox="0 0 260 170" aria-hidden="true" style="z-index:3"><defs><linearGradient id="mo-front" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#FBF7F0"/><stop offset="1" stop-color="#E4DBCB"/></linearGradient></defs>
+        <path d="M0 44 L130 112 L260 44 V162 A8 8 0 0 1 252 170 H8 A8 8 0 0 1 0 162Z" fill="url(#mo-front)"/><path d="M2 168 L112 104 M258 168 L148 104" stroke="#8F826B" stroke-opacity="0.25" stroke-width="1.4"/><path d="M1 45 L130 112 L259 45" fill="none" stroke="#fff" stroke-opacity="0.8" stroke-width="1.4"/></svg>
+      <div class="klep" aria-hidden="true"><svg width="260" height="104" viewBox="0 0 260 104" style="display:block"><defs><linearGradient id="mo-flap" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#E9E0CF"/><stop offset="1" stop-color="#D3C8B3"/></linearGradient></defs><path d="M0 0 H260 L138 100 Q130 106 122 100Z" fill="url(#mo-flap)"/><path d="M1 1 L124 101 M259 1 L136 101" fill="none" stroke="#8F826B" stroke-opacity="0.25" stroke-width="1.2"/></svg></div>
+      <svg class="dicht-laag" width="260" height="170" viewBox="0 0 260 170" aria-hidden="true" style="filter:drop-shadow(0 14px 22px rgba(0,0,0,.35))"><defs><linearGradient id="mo-dflap" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F2EBDF"/><stop offset="1" stop-color="#DCD2BF"/></linearGradient></defs>
+        <rect width="260" height="170" rx="8" fill="#EEE7DA"/><path d="M0 10 L120 98 L0 160Z" fill="#E7DECF"/><path d="M260 10 L140 98 L260 160Z" fill="#E7DECF"/><path d="M2 170 L122 94 Q130 89 138 94 L258 170Z" fill="#F5F0E7"/><path d="M0 0 H260 L141 100 Q130 108 119 100Z" fill="url(#mo-dflap)"/></svg>
+      ${open ? '' : '<span class="puls" aria-hidden="true"></span>'}
+      <div class="zegel" aria-hidden="true"><span></span><span></span></div>
+      ${open ? '' : '<button class="tik" data-a="zegel" aria-label="Breek het zegel"></button>'}
     </div>
-  </main>`;
+    <div style="flex-grow:1"></div>
+    <div style="position:relative;width:100%;max-width:432px;display:flex;flex-direction:column;align-items:center;gap:12px">
+      ${!open ? '<span style="font-size:16px;font-weight:600;color:#FBE7DA">Tik op het zegel</span>' : ''}
+      ${donker ? '<button class="btn goud" data-a="naar-missie">Naar je missie</button>' : ''}
+    </div></main>`;
+}
+
+// ----- spel -----
+function vSpelkop() {
+  const s = S.sessie, me = ik();
+  return `<div class="spelkop"><div class="t"><b>${esc(s.naam)}</b><span>${esc(s.code)} · ${plural(actief().length, 'speler', 'spelers')}${isHost() ? ' · host' : ''}</span></div>
+    <div class="r">${s.punten_aan ? `<span class="chip-score">${me?.punten_beschuldiging ?? 0} pt</span>` : ''}<button class="iconbtn" data-a="speluitleg" aria-label="Spelregels">${I.vraag}</button></div></div>`;
 }
 
 function vSpel() {
-  const s = S.sessie, nOpen = openBesch().filter((b) => b.beschuldigde_id !== ik()?.id).length;
+  const nOpen = openBesch().filter((b) => b.beschuldigde_id !== ik()?.id).length;
   return `<main class="screen">
-    <div class="topbar" style="padding:12px 12px 4px 24px"><h1><span class="sub">${isHost() ? 'Host · ' : ''}${esc(s.code)}</span>${esc(s.naam)}</h1>
-      <button class="iconbtn" data-a="view-uitleg" aria-label="Spelregels">${I.vraag}</button></div>
+    ${S.tab === 'missie' ? vSpelkop() : ''}
     ${hostBanners()}
-    ${S.tab === 'missie' ? vMissieTab() : vTafelTab()}
-    <nav class="tabbar" role="tablist">
+    ${S.tab === 'missie' ? vMissieTab() : vSpelersTab()}
+    <nav class="tabbalk" role="tablist">
       <button role="tab" aria-selected="${S.tab === 'missie'}" data-a="tab" data-v="missie">${I.missie}Missie</button>
-      <button role="tab" aria-selected="${S.tab === 'tafel'}" data-a="tab" data-v="tafel">${I.tafel}Tafel${nOpen ? `<span class="count">${nOpen}</span>` : ''}</button>
-    </nav>
-  </main>`;
+      <button role="tab" aria-selected="${S.tab === 'spelers'}" data-a="tab" data-v="spelers">${I.spelers}Spelers${nOpen ? ` · ${nOpen} open` : ''}</button>
+    </nav></main>`;
 }
 
 function vMissieTab() {
   const m = S.missie, me = ik();
   if (!m) return `<div class="missie-wrap"><div class="center-msg"><div class="spinner"></div></div></div>`;
-  if (!m.heeft_missie) return `<div class="missie-wrap"><div class="missie-kaart status-kaart"><h2>Nog geen missie</h2><p>${esc(S.fout || 'Even geduld…')}</p></div></div>`;
+  if (!m.heeft_missie) return `<div class="missie-wrap"><div class="center-msg"><h2>Nog geen missie</h2><p>${esc(S.fout || 'Even geduld…')}</p></div></div>`;
   if (me?.ontmaskerd) {
-    return `<div class="missie-wrap"><div class="missie-kaart status-kaart">
-      <span style="color:var(--bad);width:44px;height:44px">${I.masker}</span>
-      <h2>Ontmaskerd</h2><p>Je missie is mislukt. Je kunt nog wel anderen beschuldigen en meedoen.</p></div>
-      <button class="btn" data-a="tab" data-v="tafel">${I.wijs}Naar de tafel</button></div>`;
+    return `<div class="missie-wrap"><div class="voltooid-kaart" style="background:#2E1E1A;border-color:var(--rood-rand)">
+      <span class="vink" style="background:var(--rood-t);color:#2E1E1A">${I.masker}</span><h2>Ontmaskerd</h2>
+      <p>Je missie is mislukt. Je kunt nog wel anderen beschuldigen en meedoen.</p></div>
+      ${vMissieKaart(m, true)}
+      <button class="btn" data-a="tab" data-v="spelers">${I.wijs}Naar de spelers</button></div>`;
+  }
+  if (m.voltooid) {
+    const mijnDeel = S.deel.filter((d) => d.speler_id === me?.id);
+    const speur = mijnDeel.reduce((a, d) => a + d.punten, 0);
+    const verdacht = S.besch.filter((b) => b.beschuldigde_id === me?.id && b.status !== 'vervallen').length;
+    return `<div class="missie-wrap">
+      <div class="voltooid-kaart"><span class="vink">${I.vink}</span><h2>Missie voltooid</h2>
+        <span class="sub">om ${tijd(m.voltooid_op)}${m.getuige_id ? ` · getuige: ${esc(naam(m.getuige_id))}` : ''}</span>
+        <p>Blijf onder de radar. Tot het einde van de avond kun je nog ontmaskerd worden, en dan vervallen je missiepunten.</p>
+        <button class="btn ghost klein" style="justify-content:flex-start;padding:0;height:32px;font-size:13px" data-a="voltooid-ongedaan">Per ongeluk? Ongedaan maken</button></div>
+      ${vMissieKaart(m, true)}
+      ${S.sessie.punten_aan ? `<div class="mini-scores"><div><b>+${m.moeilijkheid}</b><span>missie</span></div><div><b>${speur > 0 ? '+' : ''}${speur}</b><span>speuren</span></div><div><b>${verdacht}</b><span>keer verdacht</span></div></div>` : ''}
+      <button class="btn" data-a="tab" data-v="spelers">${I.wijs}Beschuldig of doe mee</button></div>`;
   }
   const jokerTot = new Date(m.joker_tot).getTime();
-  const jokerKan = !m.voltooid && (m.gratis_wissel || m.joker_extra || (!m.joker_gebruikt && nu() < jokerTot));
-  const jokerSub = m.gratis_wissel ? 'gratis' : m.joker_extra ? 'extra' : m.joker_gebruikt ? 'gebruikt' : nu() < jokerTot ? `<span data-jokertot="${jokerTot}">${fmtMin(jokerTot - nu())}</span>` : 'voorbij';
-  return `<div class="missie-wrap">
+  const jokerKan = m.gratis_wissel || m.joker_extra || (!m.joker_gebruikt && nu() < jokerTot);
+  const jokerTekst = m.gratis_wissel ? 'Gratis wissel beschikbaar' : m.joker_extra ? 'Extra joker van de host' : m.joker_gebruikt ? 'Joker gebruikt' : nu() < jokerTot ? `Joker nog <span data-jokertot="${jokerTot}">${fmtMin(jokerTot - nu())}</span> beschikbaar` : 'Joker verlopen';
+  return `<div class="missie-wrap" id="missiewrap">
     ${m.gratis_wissel ? `<div class="banner" style="margin:0"><p>Je doelwit is vertrokken. Je mag gratis wisselen.</p></div>` : ''}
-    <div class="missie-kaart" id="missiekaart" tabindex="0" aria-label="Houd vast om je missie te zien">
-      <div class="missie-dicht" aria-hidden="true">
-        <div class="lines"><span style="width:90%"></span><span style="width:75%"></span><span style="width:82%"></span></div>
-        <span style="width:28px;height:28px">${I.oog}</span>
-        <b>${m.voltooid ? 'Missie voltooid' : 'Houd vast om je missie te zien'}</b>
-        <span style="font-size:14px">${m.voltooid ? 'Blijf onder de radar: je kunt nog ontmaskerd worden.' : 'Loslaten verbergt hem weer.'}</span>
-      </div>
-      <div class="missie-open">
-        <span class="meta"><span>${['', 'Makkelijk', 'Normaal', 'Moeilijk'][m.moeilijkheid] || ''}</span>${m.voltooid ? '<span>· voltooid</span>' : ''}</span>
-        <p class="missie-tekst">${esc(m.tekst)}</p>
-        ${m.uitleg ? `<p class="missie-uitleg">${esc(m.uitleg)}</p>` : ''}
-      </div>
-    </div>
-    <div class="actions3">
-      ${m.voltooid
-        ? `<button class="act" data-a="voltooid-ongedaan">${I.wissel}Ongedaan<small>per ongeluk?</small></button>`
-        : `<button class="act primary" data-a="voltooid">${I.vink}Voltooid</button>`}
-      <button class="act" data-a="joker" ${jokerKan ? '' : 'disabled'}>${I.wissel}Joker<small>${jokerSub}</small></button>
-      <button class="act" data-a="tab" data-v="tafel">${I.wijs}Beschuldig</button>
-    </div>
-  </div>`;
+    ${vMissieKaart(m, false)}
+    <div class="status-regel"><span>${jokerTekst}</span><span>Niet voltooid</span></div>
+    <div class="acties3">
+      <button class="act" data-a="voltooid">${I.vink}Voltooid</button>
+      <button class="act" data-a="joker" ${jokerKan ? '' : 'disabled'}>${I.wissel}Joker</button>
+      <button class="act rood" data-a="tab" data-v="spelers">${I.wijs}Beschuldig</button>
+    </div></div>`;
 }
-const fmtMin = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return `nog ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
+const fmtMin = (ms) => { const s = Math.max(0, Math.round(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
 
-function vBeschKaart(b) {
-  const d = deelnemers(b.id), me = ik();
-  const eerste = d.find((x) => x.rol === 'eerste');
-  const mee = d.filter((x) => x.rol === 'meedoener');
-  const rest = restWacht(b), ikMee = doetMee(b.id), tegenMij = b.beschuldigde_id === me?.id;
-  const lang = (nu() - new Date(b.laatste_meedoen).getTime()) / 1000 > HOST_SLUIT;
-  return `<div class="besch ${ikMee ? 'mij' : ''}">
-    <div class="besch-top"><p><b>${esc(naam(eerste?.speler_id ?? b.eerste_beschuldiger_id))}</b> beschuldigt <b>${esc(tegenMij ? 'jou' : naam(b.beschuldigde_id))}</b></p>
-      <span class="timer" data-wacht="${b.id}">${rest > 0 ? Math.ceil(rest) + 's' : ''}</span></div>
-    <div class="timerbar"><i data-wachtbar="${b.id}" style="width:${(rest / WACHT) * 100}%"></i></div>
-    <span class="who">${mee.length ? 'Doen mee: ' + mee.map((x) => esc(naam(x.speler_id))).join(', ') : 'Nog niemand doet mee'}${rest <= 0 ? ` · ${esc(tegenMij ? 'jij' : naam(b.beschuldigde_id))} kiest nu` : ''}</span>
-    ${!ikMee && !tegenMij ? `<button class="btn small primary" data-a="meedoen" data-id="${b.id}">Meedoen</button>` : ''}
-    ${isHost() && lang && !tegenMij ? `<button class="btn small ghost" data-a="host-sluit" data-id="${b.id}">Geen reactie? Sluit als afgewezen</button>` : ''}
+function vMissieKaart(m, klein) {
+  return `<div class="missie-kaart" id="missiekaart" tabindex="0" aria-label="Houd vast om je missie te lezen" ${klein ? 'style="flex-grow:0;min-height:140px"' : ''}>
+    <div class="mk-dicht" aria-hidden="true"><span class="lbl">Jouw missie</span><span class="balk" style="width:88%"></span><span class="balk" style="width:70%"></span>${klein ? '' : '<span class="balk" style="width:80%"></span>'}
+      <span class="hold">${I.hand}Houd vast om te lezen</span></div>
+    <div class="mk-open"><div class="boven"><span>Jouw missie</span><span>${MOEIL[m.moeilijkheid] || ''} · ${m.moeilijkheid} pt</span></div>
+      <div style="display:flex;flex-direction:column;gap:14px"><p class="missie-tekst">${esc(m.tekst)}</p>${m.uitleg ? `<p class="missie-uitleg">${esc(m.uitleg)}</p>` : ''}</div>
+      <div class="voet"><div class="timer5"><i></i></div><span>Laat los om te verbergen · verdwijnt vanzelf na 5 s</span></div></div>
   </div>`;
 }
 
-function vTafelTab() {
+function vSpelersTab() {
   const me = ik(), open = openBesch(), host = isHost();
   const openVoor = (id) => open.find((b) => b.beschuldigde_id === id);
   const sp = actief().slice().sort((a, b) => (a.id === me?.id) - (b.id === me?.id) || a.ontmaskerd - b.ontmaskerd || a.volgnr - b.volgnr);
+  const mijnOpen = open.filter((b) => doetMee(b.id));
   return `<div style="flex-grow:1;padding-bottom:16px">
-    ${open.length ? `<div class="section-head" style="padding-top:12px"><h2>Lopende beschuldigingen</h2><span>${open.length}</span></div>${open.map(vBeschKaart).join('')}` : ''}
-    <div class="section-head" style="padding-top:${open.length ? 16 : 12}px"><h2>Aan tafel</h2>${S.sessie.punten_aan ? '<span>punten</span>' : ''}</div>
-    <div class="list">
+    <div class="spelers-kop"><h1>Spelers<span class="s">Zeg hardop wat je vermoedt</span></h1>
+      <div class="r" style="display:flex;align-items:center;gap:4px">${S.sessie.punten_aan ? `<span class="chip-score">${me?.punten_beschuldiging ?? 0} pt</span>` : ''}<button class="iconbtn" data-a="speluitleg" aria-label="Spelregels">${I.vraag}</button></div></div>
+    ${mijnOpen.map((b) => `<button class="besch-kaart" style="width:calc(100% - 32px);text-align:left;color:inherit" data-a="open-besch" data-id="${b.id}">${ring(b.id, restWacht(b), 44, 'var(--goud)')}
+      <span class="t"><b>${b.eerste_beschuldiger_id === me?.id ? 'Jij beschuldigt' : 'Je doet mee tegen'} ${esc(naam(b.beschuldigde_id))}</b><span>${plural(deelnemers(b.id).length, 'beschuldiger', 'beschuldigers')} · tik voor details</span></span></button>`).join('')}
+    <div class="lijst">
       ${sp.map((p) => {
         const b = openVoor(p.id), zelf = p.id === me?.id;
+        let sub = zelf ? 'jij' : p.ontmaskerd ? 'ontmaskerd' : b ? `beschuldigd door ${esc(naam(b.eerste_beschuldiger_id))}` : '';
         let knop = '';
         if (!zelf && !p.ontmaskerd) {
-          if (b) knop = doetMee(b.id) ? `<span class="tag">je doet mee</span>` : `<button class="pill-btn join" data-a="meedoen" data-id="${b.id}">Meedoen</button>`;
-          else knop = `<button class="pill-btn" data-a="beschuldig" data-id="${p.id}">Beschuldig</button>`;
+          if (b) knop = doetMee(b.id) ? `<span class="jedoetmee">Je doet mee</span>` : `<button class="pill meedoen" data-a="meedoen" data-id="${b.id}">Meedoen <span data-wacht="${b.id}" style="font-variant-numeric:tabular-nums">${Math.ceil(restWacht(b)) || ''}</span></button>`;
+          else knop = `<button class="pill" data-a="beschuldig" data-id="${p.id}">Beschuldig</button>`;
         }
-        return `<div class="row ${p.ontmaskerd ? 'dim' : ''}"><span class="avatar">${esc(p.naam[0]?.toUpperCase())}</span>
-          <span class="name">${esc(p.naam)}${zelf ? ' <span class="tag">(jij)</span>' : ''}${p.ontmaskerd ? ' <span class="tag">ontmaskerd</span>' : ''}</span>
-          ${S.sessie.punten_aan ? `<span class="tag" style="font-variant-numeric:tabular-nums">${p.punten_beschuldiging > 0 ? '+' : ''}${p.punten_beschuldiging || ''}</span>` : ''}
-          ${knop}
+        return `<div class="rij ${p.ontmaskerd || zelf ? 'grijs' : ''}"><span class="ini">${esc(p.naam[0]?.toUpperCase())}</span>
+          <span class="naam"><b>${esc(p.naam)}</b>${sub ? `<span>${sub}</span>` : ''}</span>${knop}
           ${host && !zelf ? `<button class="iconbtn" data-a="spelermenu" data-id="${p.id}" aria-label="Opties voor ${esc(p.naam)}">${I.meer}</button>` : ''}</div>`;
       }).join('')}
     </div>
-    ${host ? `<div class="foot" style="padding-top:24px"><button class="btn danger small" data-a="beeindig">Spel beëindigen en onthullen</button>
+    ${host ? `<div class="foot" style="padding-top:20px">${open.filter((b) => (nu() - new Date(b.laatste_meedoen).getTime()) / 1000 > HOST_SLUIT && b.beschuldigde_id !== me?.id)
+        .map((b) => `<button class="btn klein" data-a="host-sluit" data-id="${b.id}">${esc(naam(b.beschuldigde_id))} reageert niet: sluit als afgewezen</button>`).join('')}
+      <button class="btn klein" style="border-color:var(--rood-rand);color:var(--rood-t)" data-a="beeindig">Spel beëindigen en onthullen</button>
       <p class="foot-note">Iedereen ziet daarna alle missies.</p></div>` : ''}
   </div>`;
 }
 
 // Volledig scherm voor de beschuldigde
 function vOverlay() {
-  if (S.view !== 'sessie' || S.sessie?.status !== 'spel') return '';
-  const me = ik();
-  const b = me && openBesch().find((x) => x.beschuldigde_id === me.id);
+  if (S.view !== 'sessie' || S.sessie?.status !== 'spel' || !ls.get('ceremonie.' + S.sid)) return '';
+  const me = ik(), b = me && openBesch().find((x) => x.beschuldigde_id === me.id);
   if (!b) { vOverlay.laatste = null; return ''; }
-  const d = deelnemers(b.id), rest = restWacht(b);
-  const eerste = d.find((x) => x.rol === 'eerste'), mee = d.filter((x) => x.rol === 'meedoener');
-  const omtrek = 2 * Math.PI * 80;
-  const lang = (nu() - new Date(b.laatste_meedoen).getTime()) / 1000 > HOST_SLUIT;
   const nieuw = vOverlay.laatste !== b.id; vOverlay.laatste = b.id;
-  return `<div class="accused ${nieuw ? 'anim' : ''}" role="alertdialog" aria-modal="true" aria-labelledby="acc-t">
-    <div class="inner">
-      <span class="eyebrow">Je wordt beschuldigd</span>
-      <h2 id="acc-t">${esc(naam(eerste?.speler_id ?? b.eerste_beschuldiger_id))} beschuldigt jou${mee.length ? `, ${plural(mee.length, 'ander doet', 'anderen doen')} mee` : ''}</h2>
-      <p style="margin:0;color:var(--muted)">Luister naar wat er hardop gezegd wordt. Raakt het de kern van je missie, dan geef je toe.</p>
-      <div class="ring" aria-live="polite">
-        <svg viewBox="0 0 180 180" aria-hidden="true"><circle cx="90" cy="90" r="80" fill="none" stroke="var(--line)" stroke-width="8"/>
-          <circle data-ring="${b.id}" cx="90" cy="90" r="80" fill="none" stroke="var(--accent)" stroke-width="8" stroke-linecap="round" stroke-dasharray="${omtrek}" stroke-dashoffset="${omtrek * (1 - rest / WACHT)}"/></svg>
-        <b data-wacht-groot="${b.id}">${rest > 0 ? Math.ceil(rest) : '0'}</b>
-      </div>
-      <span class="hint" style="text-align:center">${mee.length ? 'Doen mee: ' + mee.map((x) => esc(naam(x.speler_id))).join(', ') : 'Anderen kunnen nog meedoen'}</span>
-      <div class="grow"></div>
-      ${rest > 0
-        ? `<p class="foot-note">Over ${Math.ceil(rest)} seconden kies je: toegeven of afwijzen. Elke meedoener start de tijd opnieuw.</p>`
-        : `${lang ? '<p class="foot-note" style="color:var(--accent)">Iedereen wacht op jou. Kies nu.</p>' : ''}
-           <div class="two"><button class="btn" data-a="reageer" data-id="${b.id}" data-val="nee">Afwijzen</button>
-           <button class="btn primary" data-a="reageer" data-id="${b.id}" data-val="ja">Toegeven</button></div>`}
-    </div>
-  </div>`;
+  const d = deelnemers(b.id), rest = restWacht(b);
+  const lang = (nu() - new Date(b.laatste_meedoen).getTime()) / 1000 > HOST_SLUIT;
+  return `<div class="accused ${nieuw ? 'anim' : ''}" role="alertdialog" aria-modal="true" aria-labelledby="acc-t"><div class="inner">
+    <span class="k">Je wordt beschuldigd</span><h2 id="acc-t" class="door" style="font-size:18px;font-weight:600;color:var(--muted)">door ${esc(namenLijst(d.map((x) => naam(x.speler_id))))}</h2>
+    ${rest > 0 ? `<div style="margin:18px 0 6px">${ring(b.id, rest, 200, 'var(--rood-t)')}</div><span style="color:var(--muted)">tot je kunt reageren</span>
+        <p style="margin-top:10px">Luister wat ze denken. Doet er nog iemand mee, dan begint de teller opnieuw.</p>`
+      : `<div style="margin:24px 0 8px;display:flex;flex-direction:column;gap:6px"><span style="font-size:13px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--rood-t)">Jouw beurt</span><span style="color:var(--faint);font-size:13px">teller staat op 0</span></div>
+        <p class="vraag">Raakt hun vermoeden de kern van je missie?</p>
+        <p>Letterlijk hoeft niet. Bij de onthulling ziet iedereen deze beschuldiging naast je echte missie.</p>
+        ${lang ? '<p style="color:var(--goud)">Iedereen wacht op jou. Kies nu.</p>' : ''}`}
+    <div class="groei"></div>
+    <div class="check-missie" id="checkmissie" role="button" tabindex="0" aria-label="Houd vast om je missie te checken"><span class="label" style="display:flex;align-items:center;gap:10px"><span style="width:20px;height:20px">${I.hand}</span>Houd vast om je missie te checken</span><span class="tekst">${esc(S.missie?.tekst || '')}</span></div>
+    <div class="twee"><button class="btn toegeven" data-a="reageer" data-id="${b.id}" data-val="ja" ${rest > 0 ? 'disabled' : ''}>Toegeven</button>
+      <button class="btn licht-knop" data-a="reageer" data-id="${b.id}" data-val="nee" ${rest > 0 ? 'disabled' : ''}>Afwijzen</button></div>
+  </div></div>`;
+}
+
+function vUitslag() {
+  const u = S.uitslag;
+  if (!u) { vUitslag.laatste = null; return ''; }
+  const nieuw = vUitslag.laatste !== u.id; vUitslag.laatste = u.id;
+  return `<div class="uitslag ${nieuw ? 'anim' : ''}" data-a="uitslag-dicht"><div class="kaart" role="status">
+    <span class="ico ${u.goed ? 'good' : 'bad'}" style="width:52px;height:52px">${u.goed ? `<span style="width:26px;height:26px">${I.masker}</span>` : `<span style="width:26px;height:26px">${I.wissel}</span>`}</span>
+    <h2>${esc(u.titel)}</h2><span class="sub">${esc(u.sub)}</span>
+    ${S.sessie?.punten_aan ? u.rijen.map((r) => `<div class="r"><span>${esc(r.naam)} <span style="color:var(--faint)">· ${r.rol}</span></span><span style="color:${r.pt > 0 ? 'var(--good)' : 'var(--rood-t)'}">${r.pt > 0 ? '+' : '−'}${Math.abs(r.pt)}</span></div>`).join('') : ''}
+    <button class="btn goud klein" data-a="uitslag-dicht">Verder spelen</button><span class="noot">Verdwijnt vanzelf na 6 seconden</span></div></div>`;
 }
 
 // ----- onthulling -----
-function huidigeOnthulling() {
+function huidig() {
   const s = S.sessie, id = s.onthul_volgorde?.[s.onthul_index];
-  return { id, data: S.onthulling?.find((x) => x.speler_id === id), stap: s.onthul_stap, n: s.onthul_volgorde?.length || 0, i: s.onthul_index };
+  const data = S.onthulling?.find((x) => x.speler_id === id);
+  const check = s.onthul_stap === 'missie' && s.onthul_check >= 0 ? data?.afgewezen?.[s.onthul_check] : null;
+  return { id, data, stap: s.onthul_stap, check, n: s.onthul_volgorde?.length || 0, i: s.onthul_index };
 }
-function verdict(o) {
-  if (o.ontmaskerd) return ['bad', 'Betrapt'];
-  if (o.voltooid) return ['good', 'Gehaald'];
-  return ['meh', 'Niet gelukt'];
+function status(o) {
+  if (o.ontmaskerd) return ['bad', 'Ontmaskerd'];
+  if (o.voltooid && !o.afgewezen.length) return ['good', 'Voltooid, nooit ontmaskerd'];
+  if (o.voltooid) return ['good', 'Voltooid'];
+  return ['meh', 'Niet voltooid'];
 }
-function stemTelling(id) {
-  const st = S.stemmen.filter((x) => x.speler_id === id);
-  return { op: st.filter((x) => x.duim).length, neer: st.filter((x) => !x.duim).length };
+function tellingen(spelerId, beschId) {
+  const st = S.stemmen.filter((x) => x.speler_id === spelerId && (x.beschuldiging_id || null) === (beschId || null));
+  const c = { ja: 0, nee: 0, weet: 0 }; st.forEach((x) => c[x.keuze]++);
+  return { ...c, totaal: st.length, kiezers: actief().length - 1 };
+}
+// Welke stemvraag hoort bij de huidige stap? null = geen stemming.
+function stemVraag() {
+  const { data, stap, check } = huidig();
+  if (!data || stap !== 'missie') return null;
+  if (check) return { ronde: 'Ronde 2 · controle', vraag: 'Raakte de beschuldiging de kern?', besch: check.id,
+    gevolg: `Meer ja dan nee: ${data.naam} telt alsnog als ontmaskerd.` };
+  if (data.voltooid && !data.ontmaskerd) return { ronde: 'Ronde 1 · stemming', vraag: `Heeft ${data.naam} dit echt gedaan?`, besch: null,
+    gevolg: 'Meer nee dan ja: de missiepunten vervallen.' };
+  return null;
 }
 function revealAnim() {
-  const k = S.sessie.onthul_index + S.sessie.onthul_stap;
-  const nieuw = revealAnim.laatste !== k; revealAnim.laatste = k;
-  return nieuw ? 'anim' : '';
+  const k = `${S.sessie.onthul_index}${S.sessie.onthul_stap}${S.sessie.onthul_check}`;
+  const nieuw = revealAnim.laatste !== k; revealAnim.laatste = k; return nieuw ? 'anim' : '';
 }
-function vOnthullingInhoud(o, stap, groot) {
-  if (!o) return `<div class="center-msg"><div class="spinner"></div></div>`;
+function vStemKaart(v, data) {
+  const t = tellingen(data.speler_id, v.besch);
+  return `<div class="feest-kaart"><span class="k">${v.ronde}</span><p class="vraag">${esc(v.vraag)}</p>
+    <div class="tellers"><div><b>${t.ja}</b><span>Ja</span></div><div><b>${t.nee}</b><span>Nee</span></div><div><b>${t.weet}</b><span>Weet niet</span></div></div>
+    <p>${esc(v.gevolg)}</p><p style="font-size:13px">Stem op je telefoon · ${t.totaal} van ${t.kiezers} gestemd · ${esc(data.naam)} stemt niet</p></div>`;
+}
+function vOnthullingInhoud(groot) {
+  const { data, stap, check, n, i } = huidig();
+  if (!data) return `<div class="spinner"></div>`;
   if (stap === 'naam') {
-    return `<span class="eyebrow">Wat was de missie van</span><h2 class="naam">${esc(o.naam)}</h2>
-      ${groot ? '<p class="uitleg">Tik om te onthullen</p>' : ''}`;
+    return `<span class="ondertitel">De missie van</span><h2 class="grote-naam">${esc(data.naam)}</h2>
+      ${groot ? `<span class="tik-hint"><span style="width:18px;height:18px">${I.tik}</span>Tik om te onthullen</span>` : ''}`;
   }
-  const [cls, txt] = verdict(o), t = stemTelling(o.speler_id);
-  return `<span class="eyebrow">${esc(o.naam)}</span>
-    <p class="tekst">${esc(o.tekst)}</p>
-    <span class="verdict ${cls}">${txt}</span>
-    <div class="facts">
-      ${o.getuige ? `<span>Getuige of slachtoffer: ${esc(o.getuige)}</span>` : ''}
-      ${o.afgewezen.map((a) => `<span>Wees een beschuldiging af${a.door ? ` van ${esc(a.door)}` : ''}${a.mee > 0 ? ` (+${a.mee})` : ''}${a.door_host ? ', gesloten door de host' : ''}</span>`).join('')}
-    </div>
-    ${o.voltooid && !o.ontmaskerd ? `<div class="votes" aria-label="Stemmen"><span style="color:var(--good)">${I.duimOp}${t.op}</span><span style="color:var(--bad)">${I.duimNeer}${t.neer}</span></div>
-      ${groot ? '<p class="uitleg">Is het echt gebeurd? Stem op je telefoon.</p>' : ''}` : ''}`;
+  const [cls, txt] = status(data), v = stemVraag();
+  const links = `<div class="links"><span class="ondertitel">${esc(data.naam)}</span><span class="status-badge ${cls}">${txt}</span>
+    <p class="citaat">“${esc(data.tekst)}”</p>
+    <span class="meta">${MOEIL[data.moeilijkheid]} · ${data.moeilijkheid} ${data.moeilijkheid === 1 ? 'punt' : 'punten'}${data.voltooid ? ` · voltooid om ${tijd(data.voltooid_op)}` : ''}${data.getuige ? ` · getuige: ${esc(data.getuige)}` : ''}</span></div>`;
+  let zij = '';
+  if (check) {
+    zij = `<div style="display:flex;flex-direction:column;gap:12px"><div class="feest-kaart"><span class="k">Afgewezen beschuldiging${data.afgewezen.length > 1 ? ` ${S.sessie.onthul_check + 1} van ${data.afgewezen.length}` : ''}</span>
+      <p class="vraag" style="font-size:clamp(16px,2vw,22px)">${esc(namenLijst(check.door))} ${check.door.length > 1 ? 'beschuldigden' : 'beschuldigde'} ${esc(data.naam)} om ${tijd(check.op)}</p>
+      <p>Wat dachten jullie toen? Zeg het hardop.</p></div>${groot ? vStemKaart(v, data) : ''}</div>`;
+  } else if (groot && v) {
+    zij = vStemKaart(v, data);
+  } else if (groot && data.afgewezen.length) {
+    zij = `<div class="feest-kaart"><span class="k">Afgewezen beschuldigingen</span><p>${data.afgewezen.length}× afgewezen. Die bespreken we zo.</p></div>`;
+  }
+  return `<div class="onthul-grid ${zij ? 'met-zij' : ''}">${links}${zij}</div>`;
+}
+function volgendeLabel() {
+  const { data, stap, n, i } = huidig(), s = S.sessie;
+  if (stap === 'naam') return 'Onthul de missie';
+  const aw = data?.afgewezen?.length || 0;
+  if (s.onthul_check < aw - 1) return s.onthul_check < 0 ? 'Naar de controle' : 'Volgende beschuldiging';
+  return i < n - 1 ? 'Volgende speler' : null;
 }
 function vOnthullingHost() {
-  const { data, stap, n, i } = huidigeOnthulling();
-  const laatste = i >= n - 1 && stap === 'missie';
-  return `<main class="reveal">
-    <div class="reveal-top"><span>Onthulling · ${Math.min(i + 1, n)} van ${n}</span><span>${esc(S.sessie.naam)}</span></div>
-    <div class="reveal-main ${revealAnim()} ${stap === 'naam' ? 'reveal-tap' : ''}" ${stap === 'naam' ? 'data-a="onthul-volgende" role="button" tabindex="0"' : ''}>${vOnthullingInhoud(data, stap, true)}</div>
-    <div class="reveal-foot">
-      <button class="btn" data-a="onthul-vorige" ${i === 0 && stap === 'naam' ? 'disabled' : ''}>Vorige</button>
-      ${laatste ? `<button class="btn primary" data-a="scorebord">Naar het scorebord</button>`
-        : `<button class="btn primary" data-a="onthul-volgende">${stap === 'naam' ? 'Onthul missie' : 'Volgende speler'}</button>`}
-    </div>
-  </main>`;
+  const { stap, n, i } = huidig(), lbl = volgendeLabel();
+  return `<main class="feest stippen">
+    <div class="feest-top"><b>De onthulling</b><span>Speler ${Math.min(i + 1, n)} van ${n}</span></div>
+    <div class="feest-main ${revealAnim()} ${stap === 'naam' ? 'tik' : ''}" ${stap === 'naam' ? 'data-a="onthul-volgende" role="button" tabindex="0"' : ''}>${vOnthullingInhoud(true)}</div>
+    <div class="feest-voet"><button class="btn fk-rand" data-a="onthul-vorige" ${i === 0 && stap === 'naam' ? 'disabled' : ''}>Vorige</button>
+      ${lbl ? `<button class="btn fk" data-a="onthul-volgende">${lbl}</button>` : `<button class="btn fk" data-a="scorebord">Naar het scorebord</button>`}</div></main>`;
 }
 function vOnthullingSpeler() {
-  const { data, stap, n, i } = huidigeOnthulling(), me = ik();
-  const magStemmen = data && stap === 'missie' && data.voltooid && !data.ontmaskerd && data.speler_id !== me?.id;
-  const mijn = S.stemmen.find((x) => x.speler_id === data?.speler_id && x.stemmer_id === me?.id);
-  return `<main class="screen">
-    <div class="topbar" style="padding:12px 24px 4px"><h1><span class="sub">Onthulling · ${Math.min(i + 1, n)} van ${n}</span>${esc(S.sessie.naam)}</h1></div>
-    <div class="reveal-main ${revealAnim()}" style="padding:24px">${vOnthullingInhoud(data, stap, false)}</div>
-    <div class="foot">
-      ${magStemmen ? `<p class="foot-note" style="font-size:15px;color:var(--text)">Is het echt gebeurd?</p>
-        <div class="thumbs">
-          <button class="thumb up" data-a="stem" data-val="ja" aria-pressed="${mijn?.duim === true}">${I.duimOp}Ja</button>
-          <button class="thumb down" data-a="stem" data-val="nee" aria-pressed="${mijn?.duim === false}">${I.duimNeer}Nee</button></div>`
-        : `<p class="foot-note">${stap === 'naam' ? 'Kijk mee op het scherm van de host.' : data?.speler_id === me?.id ? 'Dit is jouw missie. De anderen stemmen.' : 'Kijk mee op het scherm van de host.'}</p>`}
-    </div>
-  </main>`;
+  const { data, stap, n, i } = huidig(), me = ik(), v = stemVraag();
+  const magStemmen = v && data && data.speler_id !== me?.id;
+  const mijn = magStemmen && S.stemmen.find((x) => x.speler_id === data.speler_id && x.stemmer_id === me?.id && (x.beschuldiging_id || null) === (v.besch || null));
+  const t = v && data ? tellingen(data.speler_id, v.besch) : null;
+  return `<main class="feest stippen">
+    <div class="feest-top"><b>De onthulling</b><span>Speler ${Math.min(i + 1, n)} van ${n}</span></div>
+    <div class="feest-main ${revealAnim()}" style="justify-content:flex-start;padding-top:32px">${vOnthullingInhoud(false)}</div>
+    <div class="foot" style="width:100%;max-width:480px;margin:0 auto">
+      ${magStemmen ? `<div class="feest-kaart" style="background:transparent;border:0;padding:0;text-align:center"><span class="k">${v.ronde}</span><p class="vraag">${esc(v.vraag)}</p></div>
+        <div class="stem-knoppen"><button class="stem" data-a="stem" data-val="ja" aria-pressed="${mijn?.keuze === 'ja'}">${I.duimOp}Ja</button>
+          <button class="stem" data-a="stem" data-val="nee" aria-pressed="${mijn?.keuze === 'nee'}">${I.duimNeer}Nee</button></div>
+        <button class="stem-weet" data-a="stem" data-val="weet" aria-pressed="${mijn?.keuze === 'weet'}">Weet ik niet</button>
+        <p class="foot-note" style="color:#F0D9C9">${mijn ? 'Je stem is binnen. Je mag nog wisselen.' : ''} ${t.totaal} van ${t.kiezers} gestemd</p>`
+        : `<p class="foot-note" style="color:#F0D9C9;font-size:15px">${v && data?.speler_id === me?.id ? 'Dit gaat over jou. De anderen stemmen.' : 'Kijk mee op het scherm van de host.'}</p>`}
+    </div></main>`;
 }
 
 function vScorebord() {
   const sp = actief().slice().sort((a, b) => (b.eindscore ?? 0) - (a.eindscore ?? 0) || a.volgnr - b.volgnr);
-  const punten = S.sessie.punten_aan;
-  const top = sp[0];
-  const titels = [];
-  if (punten && top) titels.push([I.kroon, 'Topagent van de avond', sp.filter((p) => p.eindscore === top.eindscore).map((p) => p.naam).join(' en ')]);
-  const goed = {};
-  S.deel.filter((d) => d.punten > 0).forEach((d) => { goed[d.speler_id] = (goed[d.speler_id] || 0) + 1; });
-  const max = Math.max(0, ...Object.values(goed));
-  if (max > 0) titels.push([I.vergrootglas, 'Scherpste speurder', Object.keys(goed).filter((k) => goed[k] === max).map(naam).join(' en ') + ` (${plural(max, 'keer', 'keer')} raak)`]);
-  const verdacht = new Set(S.besch.map((b) => b.beschuldigde_id));
-  const stil = sp.filter((p) => p.missie_gehaald && !verdacht.has(p.id));
-  if (stil.length) titels.push([I.masker, 'Meester der vermomming', stil.map((p) => p.naam).join(', ') + ' (nooit verdacht)']);
-  return `<main class="screen">
-    <div class="topbar" style="padding:16px 24px 4px"><h1><span class="sub">Einde</span>${esc(S.sessie.naam)}</h1></div>
-    <div class="podium"><span class="crown">${I.kroon}</span>
-      ${punten && top ? `<h2>${esc(top.naam)}</h2><p>Topagent van de avond · ${top.eindscore} punten</p>` : `<h2>Het spel is uit</h2><p>${sp.filter((p) => p.missie_gehaald).length} van de ${sp.length} missies gehaald</p>`}</div>
-    ${titels.length ? `<div class="titles">${titels.map(([ic, t, w]) => `<div class="title-card">${ic}<div><b>${t}</b><span>${esc(w)}</span></div></div>`).join('')}</div>` : ''}
-    <div class="section-head"><h2>${punten ? 'Ranglijst' : 'Resultaat'}</h2></div>
-    <div class="list" style="flex-grow:1">
-      ${sp.map((p, i) => `<div class="row"><span class="rank">${punten ? i + 1 : ''}</span><span class="avatar">${esc(p.naam[0]?.toUpperCase())}</span>
-        <span class="name">${esc(p.naam)}<br><span class="tag">${p.missie_gehaald ? 'Missie gehaald' : p.ontmaskerd ? 'Ontmaskerd' : 'Missie niet gehaald'}${punten ? ` · beschuldigen ${p.punten_beschuldiging > 0 ? '+' : ''}${p.punten_beschuldiging}` : ''}</span></span>
-        ${punten ? `<span class="score">${p.eindscore ?? 0}</span>` : `<span style="color:${p.missie_gehaald ? 'var(--good)' : 'var(--faint)'};width:22px">${p.missie_gehaald ? I.vink : ''}</span>`}</div>`).join('')}
+  const punten = S.sessie.punten_aan, top = sp[0];
+  const raak = {}, totaal = {};
+  S.deel.forEach((d) => { const b = S.besch.find((x) => x.id === d.beschuldiging_id); if (!b || b.status === 'vervallen') return; totaal[d.speler_id] = (totaal[d.speler_id] || 0) + 1; if (d.punten > 0) raak[d.speler_id] = (raak[d.speler_id] || 0) + 1; });
+  const speurder = Object.keys(raak).sort((a, b) => raak[b] - raak[a] || totaal[a] - totaal[b])[0];
+  const radar = sp.filter((p) => p.missie_gehaald).sort((a, b) => (S.onthulling?.find((o) => o.speler_id === a.id)?.keer_verdacht ?? 0) - (S.onthulling?.find((o) => o.speler_id === b.id)?.keer_verdacht ?? 0))[0];
+  const radarV = radar ? (S.onthulling?.find((o) => o.speler_id === radar.id)?.keer_verdacht ?? 0) : 0;
+  return `<main class="feest stippen" style="padding-bottom:env(safe-area-inset-bottom)">
+    <div class="feest-top"><b>Eindstand</b><span>${esc(S.sessie.naam)}</span></div>
+    <div style="width:100%;max-width:520px;margin:0 auto;display:flex;flex-direction:column;flex-grow:1">
+    ${punten && top ? `<div class="topkaart">${I.kroon}<span class="k">Topagent van de avond</span><h2>${esc(sp.filter((p) => p.eindscore === top.eindscore).map((p) => p.naam).join(' & '))}</h2><span>${top.eindscore} punten</span></div>`
+      : `<div class="topkaart">${I.kroon}<span class="k">Het spel is uit</span><h2>${sp.filter((p) => p.missie_gehaald).length} van ${sp.length}</h2><span>missies gehaald</span></div>`}
+    <div class="titels">
+      ${speurder ? `<div><span class="k">Scherpste speurder</span><b>${esc(naam(speurder))}</b><span>${raak[speurder]} van ${totaal[speurder]} raak</span></div>` : ''}
+      ${radar ? `<div><span class="k">Onder de radar</span><b>${esc(radar.naam)}</b><span>${radarV ? `${radarV}× verdacht, toch gehaald` : 'nooit verdacht'}</span></div>` : ''}
     </div>
-    <div class="foot"><button class="btn" data-a="missies-terug">Alle missies terugzien</button><button class="btn primary" data-a="naar-home">Nieuw spel</button></div>
-  </main>`;
+    <div class="rang">${sp.map((p, i) => `<div><span class="pos">${punten ? i + 1 : ''}</span><span class="n"><b>${esc(p.naam)}</b><span>${p.missie_gehaald ? 'missie gehaald' : p.ontmaskerd ? 'ontmaskerd' : 'missie niet gehaald'}${punten ? ` · speuren ${p.punten_beschuldiging > 0 ? '+' : ''}${p.punten_beschuldiging}` : ''}</span></span>
+      ${punten ? `<span class="pt">${p.eindscore ?? 0}</span>` : `<span style="width:22px;color:${p.missie_gehaald ? 'var(--feestgoud)' : 'transparent'}">${I.vink}</span>`}</div>`).join('')}</div>
+    <div class="foot"><button class="btn fk-rand klein" data-a="missies-terug">Alle missies terugzien</button><button class="btn fk" data-a="naar-home">Nieuwe avond</button></div>
+    </div></main>`;
 }
 
 // ----- sheets en toasts -----
@@ -541,50 +624,60 @@ function vSheet() {
   if (sh.type === 'voltooid') {
     const me = ik();
     inner = `<h2>Missie voltooid?</h2><p>Kies eventueel wie er getuige of slachtoffer was. Dat helpt bij de onthulling.</p>
-      <div class="list" style="gap:6px">${actief().filter((p) => p.id !== me?.id).map((p) => `<button class="btn small pick" data-a="getuige" data-id="${p.id}" aria-pressed="${sh.getuige === p.id}">${esc(p.naam)}</button>`).join('')}</div>
-      <button class="btn primary" data-a="voltooid-ok">Ja, voltooid</button><button class="btn ghost" data-a="sheet-dicht">Annuleren</button>`;
+      <div class="picks">${actief().filter((p) => p.id !== me?.id).map((p) => `<button class="pick" data-a="getuige" data-id="${p.id}" aria-pressed="${sh.getuige === p.id}">${esc(p.naam)}</button>`).join('')}</div>
+      <button class="btn goud" data-a="voltooid-ok">Ja, voltooid</button><button class="btn ghost" data-a="sheet-dicht">Annuleren</button>`;
   } else if (sh.type === 'joker') {
     inner = `<h2>Missie wisselen?</h2><p>${S.missie?.gratis_wissel ? 'Je doelwit is vertrokken, dus deze wissel is gratis.' : 'Je krijgt een nieuwe missie. Je oude komt niet terug in het spel. Dit kan maar één keer.'}</p>
-      <button class="btn primary" data-a="joker-ok">Wissel mijn missie</button><button class="btn ghost" data-a="sheet-dicht">Annuleren</button>`;
+      <button class="btn goud" data-a="joker-ok">Wissel mijn missie</button><button class="btn ghost" data-a="sheet-dicht">Annuleren</button>`;
   } else if (sh.type === 'beschuldig') {
-    inner = `<h2>${esc(naam(sh.id))} beschuldigen?</h2><p>Zeg hardop wat je denkt dat de missie is. Klopt het niet, dan kost het je 2 punten.</p>
-      <button class="btn primary" data-a="beschuldig-ok" data-id="${sh.id}">Beschuldig ${esc(naam(sh.id))}</button><button class="btn ghost" data-a="sheet-dicht">Annuleren</button>`;
+    inner = `<span class="k">Beschuldiging</span><h2>${esc(naam(sh.id))} beschuldigen?</h2><p>Zeg hardop wat je denkt dat de missie is. Klopt het, dan krijg je +2. Klopt het niet, dan −2.</p>
+      <button class="btn goud" data-a="beschuldig-ok" data-id="${sh.id}">Beschuldig ${esc(naam(sh.id))}</button><button class="btn ghost" data-a="sheet-dicht">Annuleren</button>`;
   } else if (sh.type === 'melding') {
     const b = S.besch.find((x) => x.id === sh.id);
     if (!b || b.status !== 'open' || doetMee(b.id)) { S.sheet = null; return ''; }
-    inner = `<h2>${esc(naam(b.eerste_beschuldiger_id))} beschuldigt ${esc(naam(b.beschuldigde_id))}</h2>
-      <p>Denk jij het ook? Doe mee. Klopt het, dan krijg je 1 punt; zo niet, dan kost het 1 punt.</p>
-      <button class="btn primary" data-a="meedoen" data-id="${b.id}">Meedoen</button><button class="btn ghost" data-a="sheet-dicht">Niet meedoen</button>`;
+    const d = deelnemers(b.id);
+    inner = `<div style="display:flex;align-items:center;gap:14px">${ring(b.id, restWacht(b), 52, 'var(--goud)')}<div><span class="k">Beschuldiging</span><h2>${esc(naam(b.eerste_beschuldiger_id))} beschuldigt ${esc(naam(b.beschuldigde_id))}</h2></div></div>
+      <div class="naam-chips">${d.map((x) => `<span class="${x.rol === 'eerste' ? 'eerste' : ''}">${esc(naam(x.speler_id))}${x.rol === 'eerste' ? ' · eerste' : ''}</span>`).join('')}<span style="background:transparent;color:var(--faint)">doen mee</span></div>
+      <p>Klopt het, dan krijg jij +1. Klopt het niet, dan −1. Meedoen zet de teller terug op 15.</p>
+      <div class="twee"><button class="btn klein" data-a="sheet-dicht">Later</button><button class="btn goud klein" data-a="meedoen" data-id="${b.id}">Meedoen</button></div>`;
+  } else if (sh.type === 'open-besch') {
+    const b = S.besch.find((x) => x.id === sh.id);
+    if (!b || b.status !== 'open') { S.sheet = null; return ''; }
+    const d = deelnemers(b.id), me = ik(), rest = restWacht(b);
+    inner = `<span class="k">Beschuldiging</span><h2>${b.eerste_beschuldiger_id === me?.id ? 'Jij beschuldigt' : `${esc(naam(b.eerste_beschuldiger_id))} beschuldigt`} ${esc(naam(b.beschuldigde_id))}</h2>
+      <div style="display:flex;justify-content:center;padding:6px 0">${ring(b.id, rest, 150, 'var(--goud)')}</div>
+      <p style="text-align:center">${rest > 0 ? `Zeg hardop wat je denkt dat de missie is. ${esc(naam(b.beschuldigde_id))} kan pas reageren als de teller op 0 staat.` : `${esc(naam(b.beschuldigde_id))} kiest nu: toegeven of afwijzen.`}</p>
+      <div><div class="mee-rij" style="color:var(--faint);font-size:13px"><span>Doen mee</span><span>klopt / klopt niet</span></div>
+        ${d.map((x) => `<div class="mee-rij"><span>${x.speler_id === me?.id ? 'Jij' : esc(naam(x.speler_id))} <span style="color:var(--faint)">${x.rol === 'eerste' ? '· eerste' : ''}</span></span><span>${x.rol === 'eerste' ? '+2 / −2' : '+1 / −1'}</span></div>`).join('')}</div>
+      <p style="text-align:center;font-size:13px">Je kunt niet terugtrekken</p>
+      <button class="btn klein" data-a="sheet-dicht">Terug naar het spel</button>`;
   } else if (sh.type === 'spelermenu') {
-    const p = speler(sh.id);
-    const inSpel = S.sessie.status === 'spel';
+    const p = speler(sh.id), inSpel = S.sessie.status === 'spel';
     inner = `<h2>${esc(p?.naam)}</h2>
-      ${inSpel ? `<button class="btn" data-a="extra-joker" data-id="${sh.id}">Extra joker geven</button><p class="hint">Bijvoorbeeld als iemand per ongeluk zijn scherm liet zien.</p>` : ''}
-      <button class="btn danger" data-a="verwijder" data-id="${sh.id}">Verwijderen uit de sessie</button>
+      ${inSpel ? `<button class="btn klein" data-a="extra-joker" data-id="${sh.id}">Extra joker geven</button><p>Bijvoorbeeld als iemand per ongeluk zijn scherm liet zien.</p>` : ''}
+      <button class="btn klein" style="border-color:var(--rood-rand);color:var(--rood-t)" data-a="verwijder" data-id="${sh.id}">Verwijderen van tafel</button>
       <button class="btn ghost" data-a="sheet-dicht">Annuleren</button>`;
   } else if (sh.type === 'beeindig') {
     inner = `<h2>Spel beëindigen?</h2><p>Lopende beschuldigingen vervallen en de onthulling begint. Dit kan niet terug.</p>
-      <button class="btn primary" data-a="beeindig-ok">Beëindigen en onthullen</button><button class="btn ghost" data-a="sheet-dicht">Annuleren</button>`;
+      <button class="btn goud" data-a="beeindig-ok">Beëindigen en onthullen</button><button class="btn ghost" data-a="sheet-dicht">Annuleren</button>`;
   } else if (sh.type === 'naambestaat') {
     inner = `<h2>${esc(sh.naam)} zit al aan tafel</h2><p>Ben jij dat, op een nieuw toestel (bijvoorbeeld omdat je telefoon leeg is)?</p>
-      <button class="btn primary" data-a="join-overname">Ja, ik ben ${esc(sh.naam)}</button>
-      <button class="btn" data-a="join-nieuw">Nee, ik ben iemand anders</button>`;
+      <button class="btn goud" data-a="join-overname">Ja, ik ben ${esc(sh.naam)}</button><button class="btn" data-a="join-nieuw">Nee, ik ben iemand anders</button>`;
   } else if (sh.type === 'missies') {
-    inner = `<h2>Alle missies</h2>${(S.onthulling || []).map((o) => { const [c, t] = verdict(o); return `<div class="card" style="padding:16px;display:flex;flex-direction:column;gap:6px"><b>${esc(o.naam)} <span class="tag" style="color:var(--${c === 'good' ? 'good' : c === 'bad' ? 'bad' : 'faint'})">· ${t}</span></b><span style="color:var(--muted);font-size:15px">${esc(o.tekst)}</span></div>`; }).join('')}
+    inner = `<h2>Alle missies</h2>${(S.onthulling || []).map((o) => { const [c, t] = status(o); return `<div style="padding:14px;border-radius:16px;background:var(--s1);display:flex;flex-direction:column;gap:4px"><b>${esc(o.naam)} <span style="font-weight:400;color:${c === 'good' ? 'var(--goud)' : c === 'bad' ? 'var(--rood-t)' : 'var(--faint)'}">· ${t}</span></b><span style="color:var(--muted);font-size:15px">${esc(o.tekst)}</span></div>`; }).join('')}
       <button class="btn ghost" data-a="sheet-dicht">Sluiten</button>`;
   }
-  const key = sh.type + (sh.id || '');
-  const nieuw = key !== vSheet.laatste; vSheet.laatste = key;
-  return `<div class="scrim ${nieuw ? 'anim' : ''}" data-a="scrim"><div class="sheet" role="dialog" aria-modal="true">${inner}${S.fout && S.sheet ? `<p class="error" role="alert">${esc(S.fout)}</p>` : ''}</div></div>`;
+  const key = sh.type + (sh.id || ''), nieuw = key !== vSheet.laatste; vSheet.laatste = key;
+  return `<div class="scrim ${nieuw ? 'anim' : ''}" data-a="scrim"><div class="sheet" role="dialog" aria-modal="true">${inner}${S.fout ? `<p class="error" role="alert">${esc(S.fout)}</p>` : ''}</div></div>`;
 }
 
+vToasts.gezien = new Set();
 function vToasts() {
   if (!S.toasts.length) return '';
   const nieuw = (id) => { if (vToasts.gezien.has(id)) return ''; vToasts.gezien.add(id); return 'anim'; };
-  return `<div class="toasts" aria-live="polite">${S.toasts.map((t) => `<button class="toast ${nieuw(t.id)}" data-a="toast" data-id="${t.id}"><b>${esc(t.titel)}</b>${t.tekst ? `<span class="pts">${esc(t.tekst)}</span>` : ''}</button>`).join('')}</div>`;
+  return `<div class="toasts" aria-live="polite">${S.toasts.map((t) => `<button class="toast ${nieuw(t.id)}" data-a="toast" data-id="${t.id}"><b>${esc(t.titel)}</b>${t.tekst ? `<span>${esc(t.tekst)}</span>` : ''}</button>`).join('')}</div>`;
 }
-vToasts.gezien = new Set();
-function toast(titel, tekst = '', ms = 6000) {
+function toast(titel, tekst = '', ms = 5000) {
   const id = Math.random().toString(36).slice(2);
   S.toasts.push({ id, titel, tekst });
   setTimeout(() => { S.toasts = S.toasts.filter((t) => t.id !== id); render(); }, ms);
@@ -595,30 +688,23 @@ function toast(titel, tekst = '', ms = 6000) {
 function tekenQR() {
   const el = document.getElementById('qr');
   if (!el || !window.maakQR) return;
-  const url = location.origin + location.pathname.replace(/index\.html$/, '') + '?code=' + S.sessie.code;
-  el.innerHTML = window.maakQR(url);
+  el.innerHTML = window.maakQR(location.origin + location.pathname.replace(/index\.html$/, '') + '?code=' + S.sessie.code);
 }
-
-let wasNul = new Set();
+const wasNul = new Set();
 function tik() {
   clearTimeout(tikTimer);
   if (S.view !== 'sessie' || S.sessie?.status !== 'spel') return;
   let rerender = false;
   for (const b of openBesch()) {
     const rest = restWacht(b), t = rest > 0 ? Math.ceil(rest) : 0;
-    document.querySelectorAll(`[data-wacht="${b.id}"]`).forEach((e) => (e.textContent = t ? t + 's' : ''));
-    document.querySelectorAll(`[data-wacht-groot="${b.id}"]`).forEach((e) => (e.textContent = t));
-    document.querySelectorAll(`[data-wachtbar="${b.id}"]`).forEach((e) => (e.style.width = (rest / WACHT) * 100 + '%'));
-    document.querySelectorAll(`[data-ring="${b.id}"]`).forEach((e) => { const o = 2 * Math.PI * 80; e.setAttribute('stroke-dashoffset', o * (1 - rest / WACHT)); });
+    document.querySelectorAll(`[data-wacht="${b.id}"]`).forEach((e) => (e.textContent = t || (e.closest('.ring') ? '0' : '')));
+    document.querySelectorAll(`[data-ring="${b.id}"]`).forEach((e) => e.setAttribute('stroke-dashoffset', Number(e.dataset.omtrek) * (1 - rest / WACHT)));
     const key = b.id + b.laatste_meedoen;
     if (rest <= 0 && !wasNul.has(key)) { wasNul.add(key); rerender = true; if (b.beschuldigde_id === ik()?.id) tril([300, 120, 300]); }
     const lang = (nu() - new Date(b.laatste_meedoen).getTime()) / 1000 > HOST_SLUIT;
     if (lang && !wasNul.has(key + 'lang')) { wasNul.add(key + 'lang'); rerender = true; }
   }
-  document.querySelectorAll('[data-jokertot]').forEach((e) => {
-    const ms = Number(e.dataset.jokertot) - nu();
-    if (ms <= 0) rerender = true; else e.textContent = fmtMin(ms);
-  });
+  document.querySelectorAll('[data-jokertot]').forEach((e) => { const ms = Number(e.dataset.jokertot) - nu(); if (ms <= 0) rerender = true; else e.textContent = fmtMin(ms); });
   if (rerender) return render();
   tikTimer = setTimeout(tik, 250);
 }
@@ -633,45 +719,38 @@ async function laadAlles() {
     sb.from('spelers').select('*').eq('sessie_id', sid).order('volgnr'),
     sb.from('beschuldigingen').select('*').eq('sessie_id', sid).order('aangemaakt'),
     sb.from('deelnames').select('*').eq('sessie_id', sid),
-    sb.from('stemmen').select('*').eq('sessie_id', sid),
+    sb.from('stemrondes').select('*').eq('sessie_id', sid),
     sb.from('overnames').select('*').eq('sessie_id', sid).eq('status', 'open'),
   ]);
   if (sid !== S.sid) return;
-  const fout = ses.error || spl.error;
-  if (fout) { console.warn(fout); return; }
-  if (!ses.data) return verlaat(S.eersteLaad ? null : 'Deze sessie bestaat niet meer, of je bent eruit gehaald.');
-  const vorig = { status: S.sessie?.status, ontm: ik()?.ontmaskerd, stap: S.sessie && S.sessie.onthul_index + S.sessie.onthul_stap };
+  if (ses.error || spl.error) { console.warn(ses.error || spl.error); return; }
+  if (!ses.data) return verlaat(S.eersteLaad ? null : 'Deze avond bestaat niet meer, of je bent van tafel gehaald.');
+  const vorig = { status: S.sessie?.status, ontm: ik()?.ontmaskerd, stap: S.sessie && `${S.sessie.onthul_index}${S.sessie.onthul_stap}` };
   S.sessie = ses.data; S.spelers = spl.data || []; S.deel = dee.data || []; S.stemmen = ste.data || []; S.overnames = ove.data || [];
   const nieuweBesch = bes.data || [];
-  if (!ik()) return verlaat(S.eersteLaad ? null : 'Je zit niet meer in deze sessie.');
+  if (!ik()) return verlaat(S.eersteLaad ? null : 'Je zit niet meer aan deze tafel.');
   meldingen(nieuweBesch);
   S.besch = nieuweBesch;
   ls.set('sessie', { sid, code: S.sessie.code });
-
   if (S.sessie.status === 'spel' && (!S.missie || vorig.status !== 'spel' || vorig.ontm !== ik().ontmaskerd)) await laadMissie();
-  if (['onthulling', 'einde'].includes(S.sessie.status) && (!S.onthulling || vorig.status === 'spel')) {
+  if (['onthulling', 'einde'].includes(S.sessie.status) && (!S.onthulling || vorig.status !== S.sessie.status)) {
     try { S.onthulling = await rpc('onthulling_data', { p_sessie: sid }); } catch (e) { console.warn(e); }
   }
-  if (S.sessie.status === 'onthulling' && vorig.stap !== S.sessie.onthul_index + S.sessie.onthul_stap && S.sessie.onthul_stap === 'missie' && isHost()) feest();
-  if (S.sessie.status === 'spel' && vorig.status === 'lobby' && !ls.get('intro')) { S.view = 'intro'; S.introStap = 0; }
+  if (S.sessie.status === 'onthulling' && vorig.stap !== `${S.sessie.onthul_index}${S.sessie.onthul_stap}` && S.sessie.onthul_stap === 'missie' && isHost()) {
+    const d = huidig().data; feest(d && (d.voltooid && !d.ontmaskerd));
+  }
+  if (S.sessie.status === 'spel' && vorig.status === 'lobby') { S.uitlegStap = 0; S.envelop = 'dicht'; }
   S.eersteLaad = false;
   render();
 }
-// Laden gebeurt altijd één tegelijk; komt er tijdens het laden een wijziging binnen, dan volgt nog één ronde.
 let laadtBezig = null, nogEens = false;
 function laadNu() {
   if (laadtBezig) { nogEens = true; return laadtBezig; }
-  laadtBezig = laadAlles().catch(console.warn).finally(() => {
-    laadtBezig = null;
-    if (nogEens) { nogEens = false; laadNu(); }
-  });
+  laadtBezig = laadAlles().catch(console.warn).finally(() => { laadtBezig = null; if (nogEens) { nogEens = false; laadNu(); } });
   return laadtBezig;
 }
 const planLaad = () => { clearTimeout(laadTimer); laadTimer = setTimeout(laadNu, 120); };
-
-async function laadMissie() {
-  try { S.missie = await rpc('mijn_missie', { p_sessie: S.sid }); } catch (e) { S.fout = foutTekst(e); }
-}
+async function laadMissie() { try { S.missie = await rpc('mijn_missie', { p_sessie: S.sid }); } catch (e) { S.fout = foutTekst(e); } }
 
 function meldingen(nieuw) {
   const me = ik(); if (!me) return;
@@ -681,24 +760,25 @@ function meldingen(nieuw) {
   for (const b of nieuw) {
     const was = oud.get(b.id);
     if (b.status === 'open') {
-      if (!S.gezien.has(b.id) && b.beschuldigde_id !== me.id && !doetMee(b.id) && !S.eersteLaad) {
-        if (!S.sheet) S.sheet = { type: 'melding', id: b.id };
-      }
+      if (!S.gezien.has(b.id) && b.beschuldigde_id !== me.id && !doetMee(b.id) && !S.eersteLaad && !S.sheet) { S.sheet = { type: 'melding', id: b.id }; tril(120); }
       if (b.beschuldigde_id === me.id && !S.gezien.has(b.id)) tril([200, 100, 200]);
       S.gezien.add(b.id);
     } else if (was && was.status === 'open' && b.status !== 'vervallen' && !S.gezien.has(b.id + ':uit')) {
       const d = S.deel.filter((x) => x.beschuldiging_id === b.id);
-      const pts = S.sessie.punten_aan ? d.map((x) => `${naam(x.speler_id)} ${x.punten > 0 ? '+' : '−'}${Math.abs(x.punten)}`).join(' · ') : '';
       const wie = b.beschuldigde_id === me.id ? 'Jij' : naam(b.beschuldigde_id);
-      if (b.status === 'toegegeven') toastLater(`${wie} ${b.beschuldigde_id === me.id ? 'gaf' : 'geeft'} toe: ontmaskerd`, pts);
-      else toastLater(`${wie} ${b.beschuldigde_id === me.id ? 'wees' : 'wijst'} de beschuldiging af${b.door_host ? ' (gesloten door de host)' : ''}`, pts);
-      if (S.sheet?.type === 'melding' && S.sheet.id === b.id) S.sheet = null;
+      S.uitslag = {
+        id: b.id, goed: b.status === 'toegegeven',
+        titel: b.status === 'toegegeven' ? `${wie} ${b.beschuldigde_id === me.id ? 'bent' : 'is'} ontmaskerd` : `${wie} ${b.beschuldigde_id === me.id ? 'wees' : 'wijst'} de beschuldiging af`,
+        sub: b.status === 'toegegeven' ? 'De beschuldiging klopte. Zijn missie is mislukt.' : b.door_host ? 'Gesloten door de host. Er wordt gewoon doorgespeeld.' : 'Er wordt gewoon doorgespeeld. Bij de onthulling komt dit terug.',
+        rijen: d.sort((x, y) => (x.rol === 'eerste' ? -1 : 1)).map((x) => ({ naam: x.speler_id === me.id ? 'Jij' : naam(x.speler_id), rol: x.rol === 'eerste' ? 'eerste' : 'meedoener', pt: x.punten })),
+      };
+      clearTimeout(meldingen.t); meldingen.t = setTimeout(() => { S.uitslag = null; render(); }, 6000);
+      if (S.sheet && ['melding', 'open-besch'].includes(S.sheet.type) && S.sheet.id === b.id) S.sheet = null;
     }
     if (b.status !== 'open') S.gezien.add(b.id + ':uit');
   }
   ls.set(key, [...S.gezien].slice(-300));
 }
-function toastLater(t, x) { setTimeout(() => toast(t, x), 0); }
 
 function abonneer() {
   if (kanaal) sb.removeChannel(kanaal);
@@ -708,68 +788,49 @@ function abonneer() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'spelers', filter: f }, planLaad)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'beschuldigingen', filter: f }, planLaad)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'deelnames', filter: f }, planLaad)
-    .on('postgres_changes', { event: '*', schema: 'public', table: 'stemmen', filter: f }, planLaad)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'stemrondes', filter: f }, planLaad)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'overnames', filter: f }, planLaad)
     .subscribe((st) => { if (st === 'SUBSCRIBED') planLaad(); });
 }
-
 async function ping() {
   if (!S.sid) return;
   try {
-    const t0 = Date.now();
-    const r = await rpc('ping', { p_sessie: S.sid });
-    const t1 = Date.now();
-    // klokverschil met de server; de meting met de kortste rondreis is het nauwkeurigst
-    const rtt = t1 - t0;
+    const t0 = Date.now(), r = await rpc('ping', { p_sessie: S.sid }), t1 = Date.now(), rtt = t1 - t0;
     if (r?.nu && (rtt < (S.besteRtt ?? Infinity) || rtt < 400)) { S.besteRtt = Math.min(rtt, S.besteRtt ?? Infinity); S.offset = new Date(r.nu).getTime() - (t0 + t1) / 2; }
   } catch (e) { if (String(e.message).includes('geen_speler')) planLaad(); }
 }
-
 async function betreed(sid) {
   S.sid = sid; S.sessie = null; S.missie = null; S.onthulling = null; S.besch = []; S.gezien = new Set(); S.eersteLaad = true;
-  S.view = 'sessie'; S.tab = 'missie'; S.fout = null;
-  render();
-  abonneer();
-  await ping();
-  await laadNu();
-  clearInterval(pingTimer);
-  pingTimer = setInterval(() => { ping(); }, 25000);
+  S.view = 'sessie'; S.tab = 'missie'; S.fout = null; S.uitlegStap = 0; S.envelop = 'dicht';
+  render(); abonneer(); await ping(); await laadNu();
+  clearInterval(pingTimer); pingTimer = setInterval(ping, 25000);
 }
-
 function verlaat(msg) {
   if (kanaal) { sb.removeChannel(kanaal); kanaal = null; }
-  clearInterval(pingTimer);
-  ls.del('sessie');
-  S.sid = null; S.sessie = null; S.missie = null; S.onthulling = null; S.sheet = null; S.spelers = []; S.besch = [];
-  S.fout = msg || null;
-  S.view = msg ? 'weg' : 'home';
+  clearInterval(pingTimer); ls.del('sessie');
+  S.sid = null; S.sessie = null; S.missie = null; S.onthulling = null; S.sheet = null; S.uitslag = null; S.spelers = []; S.besch = [];
+  S.fout = msg || null; S.view = msg ? 'weg' : 'home';
   render();
 }
 
 // ---------- feest bij onthulling ----------
-function feest() {
-  const kleuren = ['#D4B26A', '#E6C989', '#C0463A', '#ECE9E3', '#7FB7A4'];
-  const box = document.createElement('div');
-  box.className = 'confetti';
-  for (let i = 0; i < 80; i++) {
+function feest(groot) {
+  const kleuren = ['#E9C774', '#FBF3E4', '#B3262E', '#1F5C45', '#F5DDA0'];
+  const box = document.createElement('div'); box.className = 'confetti';
+  for (let i = 0; i < (groot ? 90 : 30); i++) {
     const c = document.createElement('i');
-    c.style.left = Math.random() * 100 + '%';
-    c.style.background = kleuren[i % kleuren.length];
-    c.style.animationDuration = 2 + Math.random() * 2 + 's';
-    c.style.animationDelay = Math.random() * 0.6 + 's';
+    c.style.left = Math.random() * 100 + '%'; c.style.background = kleuren[i % kleuren.length];
+    c.style.animationDuration = 2 + Math.random() * 2 + 's'; c.style.animationDelay = Math.random() * 0.6 + 's';
     box.appendChild(c);
   }
-  document.body.appendChild(box);
-  setTimeout(() => box.remove(), 5000);
+  document.body.appendChild(box); setTimeout(() => box.remove(), 5000);
   try {
     const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
-      const o = ctx.createOscillator(), g = ctx.createGain();
+    (groot ? [523.25, 659.25, 783.99, 1046.5] : [392, 523.25]).forEach((f, i) => {
+      const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime + i * 0.12;
       o.type = 'triangle'; o.frequency.value = f;
-      g.gain.setValueAtTime(0.0001, ctx.currentTime + i * 0.12);
-      g.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + i * 0.12 + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + i * 0.12 + 0.6);
-      o.connect(g).connect(ctx.destination); o.start(ctx.currentTime + i * 0.12); o.stop(ctx.currentTime + i * 0.12 + 0.7);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.2, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.6);
+      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + 0.7);
     });
   } catch {}
 }
@@ -781,11 +842,10 @@ async function doe(fn) {
   try { await fn(); } catch (e) { S.fout = foutTekst(e); console.warn(e); if (!S.sheet && S.view === 'sessie' && S.sessie?.status !== 'lobby') toast(S.fout); }
   finally { S.bezig = false; render(); }
 }
-
 const ACTIES = {
-  view: (el) => { S.fout = null; S.view = el.dataset.v; if (S.view === 'uitleg') S.terug = 'home'; },
-  'view-uitleg': () => { S.terug = S.view; S.view = 'uitleg'; },
-  'uitleg-terug': () => { S.view = S.terug || 'home'; },
+  view: (el) => { S.fout = null; S.view = el.dataset.v; },
+  speluitleg: () => { S.terug = S.view; S.view = 'speluitleg'; },
+  'speluitleg-terug': () => { S.view = S.terug || 'home'; },
   'naar-home': () => verlaat(),
   set: (el) => { S.form[el.dataset.k] = el.dataset.val; },
   ctx: (el) => { const c = S.form.context, v = el.dataset.val; S.form.context = c.includes(v) ? c.filter((x) => x !== v) : [...c, v]; },
@@ -804,19 +864,22 @@ const ACTIES = {
   'overname-stop': () => { ls.del('overname'); S.overname = null; S.view = 'deelnemen'; },
   scan: () => startScan(),
   stopscan: () => stopScan(),
-  'intro-volgende': () => { S.introStap++; },
-  'intro-klaar': () => { ls.set('intro', true); S.view = 'sessie'; },
+  'uitleg-volgende': () => { S.uitlegStap++; window.scrollTo(0, 0); },
+  'uitleg-klaar': () => { S.uitlegStap = 3; S.envelop = 'dicht'; window.scrollTo(0, 0); },
+  zegel: () => { if (S.envelop !== 'dicht') return; S.envelop = 'open'; tril(60); setTimeout(() => { S.envelop = 'donker'; render(); }, 1700); },
+  'naar-missie': () => { ls.set('ceremonie.' + S.sid, true); S.tab = 'missie'; },
   start: () => doe(() => rpc('start_spel', { p_sessie: S.sid })),
-  tab: (el) => { S.tab = el.dataset.v; S.fout = null; },
+  tab: (el) => { S.tab = el.dataset.v; S.fout = null; window.scrollTo(0, 0); },
   voltooid: () => { S.sheet = { type: 'voltooid', getuige: null }; },
   getuige: (el) => { S.sheet.getuige = S.sheet.getuige === el.dataset.id ? null : el.dataset.id; },
   'voltooid-ok': () => doe(async () => { await rpc('markeer_voltooid', { p_sessie: S.sid, p_getuige: S.sheet.getuige }); S.sheet = null; await laadMissie(); }),
   'voltooid-ongedaan': () => doe(async () => { await rpc('markeer_voltooid', { p_sessie: S.sid, p_getuige: null, p_ongedaan: true }); await laadMissie(); }),
   joker: () => { S.sheet = { type: 'joker' }; },
-  'joker-ok': () => doe(async () => { await rpc('gebruik_joker', { p_sessie: S.sid }); S.sheet = null; await laadMissie(); toast('Nieuwe missie', 'Houd je kaart vast om hem te zien.', 3500); }),
+  'joker-ok': () => doe(async () => { await rpc('gebruik_joker', { p_sessie: S.sid }); S.sheet = null; await laadMissie(); toast('Nieuwe missie', 'Houd je kaart vast om hem te lezen.', 3500); }),
   beschuldig: (el) => { S.sheet = { type: 'beschuldig', id: el.dataset.id }; },
-  'beschuldig-ok': (el) => doe(async () => { await rpc('beschuldig', { p_sessie: S.sid, p_beschuldigde: el.dataset.id }); S.sheet = null; await laadNu(); }),
-  meedoen: (el) => doe(async () => { await rpc('meedoen', { p_beschuldiging: el.dataset.id }); S.sheet = null; await laadNu(); }),
+  'beschuldig-ok': (el) => doe(async () => { const r = await rpc('beschuldig', { p_sessie: S.sid, p_beschuldigde: el.dataset.id }); await laadNu(); S.sheet = { type: 'open-besch', id: r.beschuldiging_id }; }),
+  meedoen: (el) => doe(async () => { await rpc('meedoen', { p_beschuldiging: el.dataset.id }); await laadNu(); S.sheet = { type: 'open-besch', id: el.dataset.id }; }),
+  'open-besch': (el) => { S.sheet = { type: 'open-besch', id: el.dataset.id }; },
   reageer: (el) => doe(async () => { await rpc('reageer', { p_beschuldiging: el.dataset.id, p_toegeven: el.dataset.val === 'ja' }); await laadNu(); }),
   'host-sluit': (el) => doe(() => rpc('host_sluit_beschuldiging', { p_beschuldiging: el.dataset.id })),
   spelermenu: (el) => { S.sheet = { type: 'spelermenu', id: el.dataset.id }; },
@@ -829,11 +892,12 @@ const ACTIES = {
   'beeindig-ok': () => doe(async () => { await rpc('beeindig_spel', { p_sessie: S.sid }); S.sheet = null; }),
   'onthul-volgende': () => doe(() => rpc('onthul_stap', { p_sessie: S.sid, p_vooruit: true })),
   'onthul-vorige': () => doe(() => rpc('onthul_stap', { p_sessie: S.sid, p_vooruit: false })),
-  stem: (el) => doe(async () => { await rpc('stem', { p_sessie: S.sid, p_speler: huidigeOnthulling().id, p_duim: el.dataset.val === 'ja' }); await laadNu(); }),
+  stem: (el) => doe(async () => { const v = stemVraag(); if (!v) return; await rpc('stem', { p_sessie: S.sid, p_speler: huidig().id, p_keuze: el.dataset.val, p_beschuldiging: v.besch }); await laadNu(); }),
   scorebord: () => doe(() => rpc('naar_scorebord', { p_sessie: S.sid })),
   'missies-terug': () => { S.sheet = { type: 'missies' }; },
   'sheet-dicht': () => { S.sheet = null; S.fout = null; },
   scrim: (el, ev) => { if (ev.target === el && S.sheet?.type !== 'naambestaat') { S.sheet = null; S.fout = null; } },
+  'uitslag-dicht': () => { S.uitslag = null; },
   toast: (el) => { S.toasts = S.toasts.filter((t) => t.id !== el.dataset.id); },
 };
 
@@ -846,44 +910,30 @@ async function joinMet(keuze) {
     const r = await rpc('join_sessie', { p_code: f.code, p_naam: f.spelerNaam, p_keuze: keuze });
     if (r.status === 'naam_bestaat') { S.sheet = { type: 'naambestaat', naam: r.naam }; return; }
     if (r.status === 'overname_aangevraagd') { S.overname = { id: r.overname_id, naam: f.spelerNaam.trim() }; ls.set('overname', S.overname); S.view = 'overname'; wachtOpOvername(); return; }
-    if (!ls.get('intro')) { await betreed(r.sessie_id); if (S.sessie?.status === 'spel') { S.view = 'intro'; S.introStap = 0; } return; }
     await betreed(r.sessie_id);
   });
 }
-
 async function wachtOpOvername() {
   while (S.view === 'overname' && S.overname) {
     try {
       const r = await rpc('overname_check', { p_overname: S.overname.id });
-      if (r.status === 'goed') { ls.del('overname'); S.overname = null; return betreed(r.sessie_id); }
+      if (r.status === 'goed') { ls.del('overname'); S.overname = null; ls.set('ceremonie.' + r.sessie_id, true); return betreed(r.sessie_id); }
       if (r.status === 'geweigerd') { ls.del('overname'); S.overname = null; S.view = 'deelnemen'; S.fout = 'De host heeft het niet bevestigd.'; return render(); }
     } catch (e) { ls.del('overname'); S.overname = null; S.view = 'deelnemen'; S.fout = foutTekst(e); return render(); }
     await new Promise((r) => setTimeout(r, 3000));
   }
 }
 
-// QR scannen (waar de browser het ondersteunt)
 let scanStream = null;
 async function startScan() {
-  if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) {
-    toast('Open de camera-app van je telefoon', 'Richt hem op de QR-code; die opent de app met de code al ingevuld.', 5000);
-    return;
-  }
-  try {
-    scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-  } catch { toast('Geen toegang tot de camera', 'Typ de code dan over.'); return; }
+  if (!('BarcodeDetector' in window) || !navigator.mediaDevices?.getUserMedia) { toast('Open de camera-app van je telefoon', 'Richt hem op de QR-code; die opent de app met de code al ingevuld.', 5000); return; }
+  try { scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); } catch { toast('Geen toegang tot de camera', 'Typ de code dan over.'); return; }
   S.scannen = true; render();
-  const v = document.getElementById('scan');
-  v.srcObject = scanStream; await v.play().catch(() => {});
+  const v = document.getElementById('scan'); v.srcObject = scanStream; await v.play().catch(() => {});
   const det = new window.BarcodeDetector({ formats: ['qr_code'] });
   const loop = async () => {
     if (!S.scannen) return;
-    try {
-      const codes = await det.detect(v);
-      const raw = codes[0]?.rawValue;
-      const m = raw && (raw.match(/[?&]code=([A-Za-z]{4})/) || raw.match(/^([A-Za-z]{4})$/));
-      if (m) { S.form.code = m[1].toUpperCase(); stopScan(); return; }
-    } catch {}
+    try { const raw = (await det.detect(v))[0]?.rawValue; const m = raw && (raw.match(/[?&]code=([A-Za-z]{4})/) || raw.match(/^([A-Za-z]{4})$/)); if (m) { S.form.code = m[1].toUpperCase(); stopScan(); return; } } catch {}
     requestAnimationFrame(loop);
   };
   loop();
@@ -894,57 +944,51 @@ function stopScan() { S.scannen = false; scanStream?.getTracks().forEach((t) => 
 document.addEventListener('click', (ev) => {
   const el = ev.target.closest('[data-a]');
   if (!el || el.disabled) return;
-  const fn = ACTIES[el.dataset.a];
-  if (!fn) return;
+  const fn = ACTIES[el.dataset.a]; if (!fn) return;
+  if (['scrim', 'uitslag-dicht'].includes(el.dataset.a) && el.classList.contains('uitslag') && ev.target !== el) return;
   if (el.dataset.a === 'scrim' && ev.target !== el) return;
   const r = fn(el, ev);
   if (!(r instanceof Promise)) render();
 });
 document.addEventListener('keydown', (ev) => {
-  if ((ev.key === 'Enter' || ev.key === ' ') && ev.target.matches('[role="button"][data-a]')) { ev.preventDefault(); ev.target.click(); }
+  const el = ev.target;
+  if ((ev.key === 'Enter' || ev.key === ' ') && el.matches?.('[role="button"][data-a]')) { ev.preventDefault(); el.click(); }
+  if (el.dataset?.code != null && ev.key === 'Backspace' && !el.value) { const i = Number(el.dataset.code); if (i > 0) document.getElementById('c' + (i - 1))?.focus(); }
+  if (ev.key === 'Enter' && S.view === 'deelnemen' && el.matches('input')) ACTIES.join();
+  if (ev.key === 'Enter' && S.view === 'nieuw' && el.matches('input')) ACTIES.maak();
 });
 document.addEventListener('input', (ev) => {
   const el = ev.target;
   if (el.dataset.f) { S.form[el.dataset.f] = el.value; return; }
   if (el.dataset.code != null) {
-    const i = Number(el.dataset.code);
-    const v = el.value.toUpperCase().replace(/[^A-Z]/g, '');
+    const i = Number(el.dataset.code), v = el.value.toUpperCase().replace(/[^A-Z]/g, '');
     const arr = (S.form.code + '    ').slice(0, 4).split('');
-    if (v.length > 1) { // geplakte code
-      v.slice(0, 4 - i).split('').forEach((c, j) => (arr[i + j] = c));
-    } else arr[i] = v || ' ';
+    if (v.length > 1) v.slice(0, 4 - i).split('').forEach((c, j) => (arr[i + j] = c)); else arr[i] = v || ' ';
     S.form.code = arr.join('').replace(/\s+$/, '');
     document.querySelectorAll('[data-code]').forEach((b, j) => (b.value = (arr[j] || '').trim()));
-    const next = v ? Math.min(3, i + v.length) : i;
-    if (v && i < 3) document.getElementById('c' + next)?.focus();
+    if (v && i < 3) document.getElementById('c' + Math.min(3, i + v.length))?.focus();
   }
 });
-document.addEventListener('keydown', (ev) => {
-  const el = ev.target;
-  if (el.dataset?.code != null && ev.key === 'Backspace' && !el.value) {
-    const i = Number(el.dataset.code);
-    if (i > 0) document.getElementById('c' + (i - 1))?.focus();
-  }
-  if (ev.key === 'Enter' && S.view === 'deelnemen' && el.matches('input')) ACTIES.join();
-  if (ev.key === 'Enter' && S.view === 'nieuw' && el.matches('input')) ACTIES.maak();
-});
+// Geen browsermenu's (Chrome-zoekbalk, delen, kopiëren) buiten invoervelden
+document.addEventListener('contextmenu', (ev) => { if (!ev.target.closest('input, textarea')) ev.preventDefault(); });
+document.addEventListener('selectstart', (ev) => { if (!ev.target.closest?.('input, textarea')) ev.preventDefault(); });
+document.addEventListener('dragstart', (ev) => ev.preventDefault());
 
-// Vasthouden om de missie te tonen
+// Vasthouden om de missie te tonen (max. 5 seconden)
+const VASTHOUD = '#missiekaart, #checkmissie';
 function toonMissie(aan) {
-  const k = document.getElementById('missiekaart');
+  clearTimeout(leesTimer);
   S.vasthouden = aan;
-  if (k) k.classList.toggle('toon', aan);
+  document.querySelectorAll(VASTHOUD).forEach((k) => k.classList.toggle('toon', aan));
+  document.getElementById('missiewrap')?.classList.toggle('toon-dim', aan);
+  if (aan) leesTimer = setTimeout(() => toonMissie(false), LEESTIJD);
   if (!aan && S.renderWacht) { S.renderWacht = false; render(); }
 }
-document.addEventListener('pointerdown', (ev) => { if (ev.target.closest('#missiekaart')) { ev.preventDefault(); toonMissie(true); } });
+document.addEventListener('pointerdown', (ev) => { if (ev.target.closest(VASTHOUD)) { ev.preventDefault(); toonMissie(true); } });
 ['pointerup', 'pointercancel'].forEach((t) => document.addEventListener(t, () => { if (S.vasthouden) toonMissie(false); }));
-document.addEventListener('contextmenu', (ev) => { if (ev.target.closest('#missiekaart')) ev.preventDefault(); });
-document.addEventListener('keydown', (ev) => { if (ev.target.id === 'missiekaart' && (ev.key === ' ' || ev.key === 'Enter')) { ev.preventDefault(); toonMissie(true); } });
-document.addEventListener('keyup', (ev) => { if (ev.target.id === 'missiekaart') toonMissie(false); });
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) { if (S.vasthouden) toonMissie(false); }
-  else if (S.sid) { ping(); planLaad(); }
-});
+document.addEventListener('keydown', (ev) => { if (ev.target.matches?.(VASTHOUD) && (ev.key === ' ' || ev.key === 'Enter') && !ev.repeat) { ev.preventDefault(); toonMissie(true); } });
+document.addEventListener('keyup', (ev) => { if (ev.target.matches?.(VASTHOUD)) toonMissie(false); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) { if (S.vasthouden) toonMissie(false); } else if (S.sid) { ping(); planLaad(); } });
 window.addEventListener('blur', () => { if (S.vasthouden) toonMissie(false); });
 window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); S.installPrompt = e; if (S.view === 'home') render(); });
 
@@ -955,33 +999,17 @@ async function start() {
   const p = new URLSearchParams(location.search);
   if (p.get('code')) { S.form.code = p.get('code').toUpperCase().slice(0, 4); history.replaceState(null, '', location.pathname); }
   S.form.spelerNaam = S.form.hostNaam = ls.get('naam', '') || '';
-
-  if (!CFG.supabaseUrl || CFG.supabaseUrl.includes('VUL_IN')) {
-    $app.innerHTML = `<main class="screen"><div class="center-msg"><h2>Nog niet ingesteld</h2><p>Vul in config.js de Supabase-URL en de anon key in.</p></div></main>`;
-    return;
-  }
+  if (!CFG.supabaseUrl || CFG.supabaseUrl.includes('VUL_IN')) { $app.innerHTML = `<main class="screen"><div class="center-msg"><h2>Nog niet ingesteld</h2><p>Vul in config.js de Supabase-URL en de anon key in.</p></div></main>`; return; }
   try {
     const { createClient } = window.__supabaseMock || (await import(SUPABASE_ESM));
     sb = createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, { auth: { persistSession: true, autoRefreshToken: true, storageKey: 'ta.auth' } });
     let { data } = await sb.auth.getSession();
-    if (!data.session) {
-      const r = await sb.auth.signInAnonymously();
-      if (r.error) throw r.error;
-      data = r.data;
-    }
+    if (!data.session) { const r = await sb.auth.signInAnonymously(); if (r.error) throw r.error; data = r.data; }
     uid = data.session?.user?.id || data.user?.id;
-  } catch (e) {
-    console.error(e);
-    S.view = 'home'; S.fout = 'Geen verbinding met de server. Check je internet en herlaad de app.';
-    return render();
-  }
-
-  const oudOvername = ls.get('overname');
-  const oud = ls.get('sessie');
+  } catch (e) { console.error(e); S.view = 'home'; S.fout = 'Geen verbinding met de server. Check je internet en herlaad de app.'; return render(); }
+  const oudOvername = ls.get('overname'), oud = ls.get('sessie');
   if (oudOvername) { S.overname = oudOvername; S.view = 'overname'; render(); return wachtOpOvername(); }
-  if (oud?.sid) {
-    try { await betreed(oud.sid); return; } catch { ls.del('sessie'); }
-  }
+  if (oud?.sid) { try { await betreed(oud.sid); return; } catch { ls.del('sessie'); } }
   S.view = S.form.code ? 'deelnemen' : 'home';
   render();
 }

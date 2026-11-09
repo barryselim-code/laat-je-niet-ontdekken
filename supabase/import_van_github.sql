@@ -31,6 +31,14 @@ begin
 end $$;
 
 -- De inhoud van missies.json (als tekst) importeren. Vervangt de bestaande missies.
+-- xor+base64 terugdraaien (formaat van de missie-chat)
+create or replace function geheim.ontxor(p_data text, p_sleutel text) returns text
+language sql immutable set search_path = public as $$
+  with x as (select decode(regexp_replace(p_data, '\s', '', 'g'), 'base64') b, convert_to(p_sleutel, 'UTF8') k)
+  select convert_from(decode(string_agg(lpad(to_hex(get_byte(x.b, i) # get_byte(x.k, i % length(x.k))), 2, '0'), '' order by i), 'hex'), 'UTF8')
+    from x, generate_series(0, length(x.b) - 1) i
+$$;
+
 create or replace function geheim.importeer_tekst(p_inhoud text) returns json
 language plpgsql security definer set search_path = public as $$
 declare d jsonb; lijst jsonb; woorden jsonb; tok text;
@@ -43,15 +51,19 @@ begin
   if jsonb_typeof(d) = 'string' then
     d := convert_from(decode(d #>> '{}', 'base64'), 'UTF8')::jsonb;
   end if;
+  -- omhulsel {codering: "xor+base64", sleutel, data}
+  if jsonb_typeof(d) = 'object' and d->>'codering' = 'xor+base64' and d ? 'data' then
+    d := geheim.ontxor(d->>'data', d->>'sleutel')::jsonb;
+  end if;
   if jsonb_typeof(d) = 'array' then
     lijst := d;
   else
     lijst := coalesce(d->'missies', d->'missions', d->'items');
-    woorden := coalesce(d->'woorden', d->'words', d->'woordenlijst');
+    woorden := coalesce(d->'woordenlijsten', d->'woorden', d->'words', d->'woordenlijst');
   end if;
   if lijst is null or jsonb_typeof(lijst) <> 'array' then raise exception 'geen_lijst_met_missies'; end if;
   select coalesce(jsonb_agg(geheim.normaliseer(x)), '[]') into lijst from jsonb_array_elements(lijst) x;
-  if woorden is not null and jsonb_typeof(woorden) = 'array' then
+  if woorden is not null and jsonb_typeof(woorden) = 'array' then  -- lijst zonder thema
     select coalesce(jsonb_agg(to_jsonb(coalesce(
              (geheim.normaliseer(jsonb_build_object('tekst', w)))->>'tekst', w #>> '{}'))), '[]')
       into woorden from jsonb_array_elements(woorden) w;
@@ -76,6 +88,6 @@ begin
                            'overzicht', v_res->'overzicht');
 end $$;
 
-revoke execute on function geheim.normaliseer(jsonb), geheim.importeer_tekst(text) from public, anon, authenticated;
+revoke execute on function geheim.normaliseer(jsonb), geheim.importeer_tekst(text), geheim.ontxor(text, text) from public, anon, authenticated;
 revoke execute on function public.ververs_missies() from public;
 grant execute on function public.ververs_missies() to anon, authenticated;

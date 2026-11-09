@@ -49,6 +49,7 @@ create table if not exists geheim.woorden (
   id        bigserial primary key,
   woord_enc bytea not null
 );
+alter table geheim.woorden add column if not exists thema text not null default 'algemeen';
 
 revoke all on all tables in schema geheim from public, anon, authenticated;
 
@@ -369,7 +370,9 @@ begin
   end if;
 
   if m.heeft_woord then
-    select geheim.ontsleutel(w.woord_enc) into v_woord from geheim.woorden w order by random() limit 1;
+    -- woord uit de lijst van het thema van de missie (anders uit alle lijsten)
+    select geheim.ontsleutel(w.woord_enc) into v_woord from geheim.woorden w
+     order by (w.thema = m.thema) desc, random() limit 1;
     v_tekst := replace(v_tekst, '{woord}', v_woord);
     v_uitleg := replace(v_uitleg, '{woord}', v_woord);
   end if;
@@ -912,7 +915,7 @@ begin
 end $$;
 
 -- p_missies: json-array met missies volgens de velden uit het framework.
--- p_woorden: optionele json-array met woorden voor {woord}.
+-- p_woorden: optioneel; json-array met woorden, of object per thema: {"algemeen": [...], "kerst": [...]}.
 create or replace function public.beheer_import(p_token text, p_missies jsonb, p_woorden jsonb default null,
                                                 p_vervangen boolean default false)
 returns json language plpgsql security definer set search_path = public as $$
@@ -980,8 +983,14 @@ begin
 
   if p_woorden is not null and jsonb_typeof(p_woorden) = 'array' and jsonb_array_length(p_woorden) > 0 then
     delete from geheim.woorden;
-    insert into geheim.woorden (woord_enc)
-      select geheim.versleutel(trim(x)) from jsonb_array_elements_text(p_woorden) x where trim(x) <> '';
+    insert into geheim.woorden (woord_enc, thema)
+      select geheim.versleutel(trim(x)), 'algemeen' from jsonb_array_elements_text(p_woorden) x where trim(x) <> '';
+  elsif p_woorden is not null and jsonb_typeof(p_woorden) = 'object' then
+    delete from geheim.woorden;
+    insert into geheim.woorden (woord_enc, thema)
+      select geheim.versleutel(trim(w)), lower(kv.key)
+        from jsonb_each(p_woorden) kv, jsonb_array_elements_text(case when jsonb_typeof(kv.value) = 'array' then kv.value else '[]' end) w
+       where trim(w) <> '';
   end if;
 
   return json_build_object('geimporteerd', v_ok, 'fouten', v_fouten, 'overzicht', public.beheer_overzicht(p_token));

@@ -8,17 +8,20 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="app.css">
 <style>
+  .card { background:#fff; border:1.5px solid var(--rand); border-radius:18px; padding:16px; }
+  .topbar { padding:16px 24px 4px } .topbar h1 { margin:0; font-family:var(--serif); font-weight:400; font-size:32px; color:var(--kerstrood) } .topbar .sub { display:block; font-family:Inter,sans-serif; font-size:13px; color:var(--ink2) }
   .stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
   .stat span:last-child { font-weight: 600; font-variant-numeric: tabular-nums; }
-  .ok { color: var(--good); } .warn { color: var(--bad); }
-  input[type=file] { color: var(--muted); }
+  .ok { color: var(--den); } .warn { color: var(--kerstrood); }
+  input[type=file] { color: var(--ink2); }
+  .stat { border-color: var(--rand2) !important; }
 </style>
 </head>
-<body data-thema="kerst">
-<main class="screen">
+<body class="licht-bg">
+<main class="screen licht">
   <div class="topbar" style="padding:16px 24px 4px"><h1><span class="sub">Beheer</span>Missies importeren</h1></div>
   <div class="body">
-    <p class="hint" style="font-size:15px;color:var(--muted)">Deze pagina stuurt missies.json rechtstreeks naar de database. Je ziet alleen aantallen, nooit de missies zelf.</p>
+    <p class="hint" style="font-size:15px">Deze pagina stuurt missies.json rechtstreeks naar de database. Je ziet alleen aantallen, nooit de missies zelf. (Staat missies.json in de GitHub-repository, dan gaat de import vanzelf.)</p>
     <div class="field"><label class="label" for="token">Beheercode</label>
       <input class="input" id="token" type="password" autocomplete="off" placeholder="Uit de laatste regel van schema.sql">
       <span class="hint">Stond onder "beheercode" nadat je schema.sql had uitgevoerd.</span></div>
@@ -31,8 +34,8 @@
     <div id="resultaat" class="card" hidden></div>
   </div>
   <div class="foot">
-    <button class="btn primary" id="import" disabled>Importeren</button>
-    <button class="btn" id="overzicht">Wat staat er nu in de database?</button>
+    <button class="btn rood" id="import" disabled>Importeren</button>
+    <button class="btn groen-rand" id="overzicht">Wat staat er nu in de database?</button>
   </div>
 </main>
 <script src="config.js"></script>
@@ -64,8 +67,13 @@ function lees(tekst) {
   try { data = JSON.parse(tekst); }
   catch { const d = b64(tekst.trim()); if (d) data = JSON.parse(d); else throw new Error('Het bestand is geen leesbare JSON (ook niet als base64).'); }
   if (typeof data === 'string') { const d = b64(data); if (d) data = JSON.parse(d); }
+  if (data && data.codering === 'xor+base64' && data.data) {
+    const b = Uint8Array.from(atob(data.data.replace(/\s+/g, '')), (c) => c.charCodeAt(0));
+    const k = new TextEncoder().encode(data.sleutel || '');
+    data = JSON.parse(new TextDecoder().decode(b.map((x, i) => x ^ k[i % k.length])));
+  }
   let lijst = Array.isArray(data) ? data : data.missies || data.missions || data.items || null;
-  let wl = Array.isArray(data) ? null : data.woorden || data.words || data.woordenlijst || null;
+  let wl = Array.isArray(data) ? null : data.woordenlijsten || data.woorden || data.words || data.woordenlijst || null;
   if (!Array.isArray(lijst)) throw new Error('Geen lijst met missies gevonden in het bestand.');
   lijst = lijst.map((m) => {
     const o = {};
@@ -73,6 +81,7 @@ function lees(tekst) {
     return o;
   });
   if (Array.isArray(wl)) wl = wl.map((w) => decodeVeld(String(w)));
+  else if (wl && typeof wl === 'object') { const o = {}; for (const [k, v] of Object.entries(wl)) o[k] = Array.isArray(v) ? v.map((w) => decodeVeld(String(w))) : []; wl = o; }
   return { lijst, wl };
 }
 function telling(lijst, veld) {
@@ -103,7 +112,7 @@ $('bestand').addEventListener('change', async () => {
       rij('Lijken nog gecodeerd', gecodeerd, gecodeerd ? 'warn' : 'ok') +
       rij('Dubbele id\'s', dubbel, dubbel ? 'warn' : 'ok') +
       rij('Met {woord}', woordNodig) +
-      rij('Woordenlijst', woorden ? woorden.length + ' woorden' : 'geen', woordNodig && !woorden ? 'warn' : '');
+      rij('Woordenlijst', woorden ? (Array.isArray(woorden) ? woorden.length + ' woorden' : Object.entries(woorden).map(([k, v]) => `${k} ${v.length}`).join(' · ')) : 'geen', woordNodig && !woorden ? 'warn' : '');
     $('controle').hidden = false;
     $('import').disabled = !lijst.length;
     if (gecodeerd) $('fout').textContent = 'Een deel van de missies lijkt nog gecodeerd en kon niet worden omgezet. Vraag de missie-chat om het formaat (zonder de inhoud te laten zien).';
