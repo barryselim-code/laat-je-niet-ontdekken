@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="nl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Laat je niet ontdekken! – beheer</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="app.css">
+<style>
+  .stat { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 15px; }
+  .stat span:last-child { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .ok { color: var(--good); } .warn { color: var(--bad); }
+  input[type=file] { color: var(--muted); }
+</style>
+</head>
+<body data-thema="kerst">
+<main class="screen">
+  <div class="topbar" style="padding:16px 24px 4px"><h1><span class="sub">Beheer</span>Missies importeren</h1></div>
+  <div class="body">
+    <p class="hint" style="font-size:15px;color:var(--muted)">Deze pagina stuurt missies.json rechtstreeks naar de database. Je ziet alleen aantallen, nooit de missies zelf.</p>
+    <div class="field"><label class="label" for="token">Beheercode</label>
+      <input class="input" id="token" type="password" autocomplete="off" placeholder="Uit de laatste regel van schema.sql">
+      <span class="hint">Stond onder "beheercode" nadat je schema.sql had uitgevoerd.</span></div>
+    <div class="field"><label class="label" for="bestand">Bestand missies.json</label>
+      <input id="bestand" type="file" accept=".json,application/json,text/plain"></div>
+    <div class="toggle-row"><div><b>Bestaande missies vervangen</b><span>Uit = toevoegen en bijwerken op id</span></div>
+      <button class="toggle" id="vervang" aria-pressed="false" aria-label="Bestaande missies vervangen"></button></div>
+    <div id="controle" class="card" hidden></div>
+    <p id="fout" class="error" role="alert"></p>
+    <div id="resultaat" class="card" hidden></div>
+  </div>
+  <div class="foot">
+    <button class="btn primary" id="import" disabled>Importeren</button>
+    <button class="btn" id="overzicht">Wat staat er nu in de database?</button>
+  </div>
+</main>
+<script src="config.js"></script>
+<script type="module">
+const CFG = window.TAFELAGENT_CONFIG || {};
+const $ = (id) => document.getElementById(id);
+let sb, missies = null, woorden = null;
+
+const ALIAS = { text: 'tekst', mission: 'tekst', missie: 'tekst', explanation: 'uitleg', category: 'categorie', family: 'familie',
+  difficulty: 'moeilijkheid', theme: 'thema', target: 'doelwit', requires: 'vereist', age: 'leeftijd', words: 'woorden' };
+
+function b64(s) {
+  try { const bin = atob(s.replace(/\s+/g, '')); return new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(bin, (c) => c.charCodeAt(0))); }
+  catch { return null; }
+}
+// Een veld dat er gecodeerd uitziet (base64, zonder spaties) wordt gedecodeerd.
+function decodeVeld(v) {
+  if (typeof v !== 'string') return v;
+  const t = v.trim();
+  if (t.length >= 8 && !/\s/.test(t) && /^[A-Za-z0-9+/=_-]+$/.test(t) && t.length % 4 === 0) {
+    const d = b64(t.replace(/-/g, '+').replace(/_/g, '/'));
+    if (d && /\s/.test(d)) return d;
+  }
+  if (t.startsWith('b64:')) return b64(t.slice(4)) ?? v;
+  return v;
+}
+function lees(tekst) {
+  let data;
+  try { data = JSON.parse(tekst); }
+  catch { const d = b64(tekst.trim()); if (d) data = JSON.parse(d); else throw new Error('Het bestand is geen leesbare JSON (ook niet als base64).'); }
+  if (typeof data === 'string') { const d = b64(data); if (d) data = JSON.parse(d); }
+  let lijst = Array.isArray(data) ? data : data.missies || data.missions || data.items || null;
+  let wl = Array.isArray(data) ? null : data.woorden || data.words || data.woordenlijst || null;
+  if (!Array.isArray(lijst)) throw new Error('Geen lijst met missies gevonden in het bestand.');
+  lijst = lijst.map((m) => {
+    const o = {};
+    for (const [k, v] of Object.entries(m || {})) o[ALIAS[k.toLowerCase()] || k.toLowerCase()] = decodeVeld(v);
+    return o;
+  });
+  if (Array.isArray(wl)) wl = wl.map((w) => decodeVeld(String(w)));
+  return { lijst, wl };
+}
+function telling(lijst, veld) {
+  const t = {};
+  lijst.forEach((m) => { const k = String(m[veld] ?? '(leeg)').toLowerCase(); t[k] = (t[k] || 0) + 1; });
+  return Object.entries(t).sort().map(([k, n]) => `${k} ${n}`).join(' · ');
+}
+const rij = (a, b, cls = '') => `<div class="stat"><span>${a}</span><span class="${cls}">${b}</span></div>`;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+$('bestand').addEventListener('change', async () => {
+  $('fout').textContent = ''; $('controle').hidden = true; missies = null; $('import').disabled = true;
+  const f = $('bestand').files[0]; if (!f) return;
+  try {
+    const { lijst, wl } = lees(await f.text());
+    missies = lijst; woorden = wl;
+    const zonderTekst = lijst.filter((m) => !m.tekst || !String(m.tekst).trim()).length;
+    const gecodeerd = lijst.filter((m) => m.tekst && !/\s/.test(String(m.tekst).trim())).length;
+    const ids = lijst.map((m) => m.id).filter(Boolean);
+    const dubbel = ids.length - new Set(ids).size;
+    const woordNodig = lijst.filter((m) => String(m.tekst || '').includes('{woord}')).length;
+    $('controle').innerHTML = `<b>Controle (zonder inhoud)</b>` +
+      rij('Missies in bestand', lijst.length) +
+      rij('Per thema', esc(telling(lijst, 'thema'))) +
+      rij('Per categorie', esc(telling(lijst, 'categorie'))) +
+      rij('Per moeilijkheid', esc(telling(lijst, 'moeilijkheid'))) +
+      rij('Zonder tekst', zonderTekst, zonderTekst ? 'warn' : 'ok') +
+      rij('Lijken nog gecodeerd', gecodeerd, gecodeerd ? 'warn' : 'ok') +
+      rij('Dubbele id\'s', dubbel, dubbel ? 'warn' : 'ok') +
+      rij('Met {woord}', woordNodig) +
+      rij('Woordenlijst', woorden ? woorden.length + ' woorden' : 'geen', woordNodig && !woorden ? 'warn' : '');
+    $('controle').hidden = false;
+    $('import').disabled = !lijst.length;
+    if (gecodeerd) $('fout').textContent = 'Een deel van de missies lijkt nog gecodeerd en kon niet worden omgezet. Vraag de missie-chat om het formaat (zonder de inhoud te laten zien).';
+    if (woordNodig && !woorden) $('fout').textContent = 'Er zijn missies met {woord}, maar geen woordenlijst. Die missies worden niet uitgedeeld tot er een woordenlijst is.';
+  } catch (e) { $('fout').textContent = e.message; }
+});
+
+$('vervang').addEventListener('click', () => { const b = $('vervang'); b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true'); });
+
+function toonOverzicht(o, titel) {
+  const fmt = (x) => Object.entries(x || {}).map(([k, n]) => `${k} ${n}`).join(' · ') || '–';
+  $('resultaat').innerHTML = `<b>${titel}</b>` + rij('Missies in database', o.totaal) + rij('Per thema', esc(fmt(o.per_thema))) +
+    rij('Per categorie', esc(fmt(o.per_categorie))) + rij('Per moeilijkheid', esc(fmt(o.per_moeilijkheid))) +
+    rij('Per leeftijd', esc(fmt(o.per_leeftijd))) + rij('Met doelwit', o.met_doelwit) + rij('Met {woord}', o.met_woord) +
+    rij('Families', o.families) + rij('Woorden', o.woorden);
+  $('resultaat').hidden = false;
+}
+
+async function verbind() {
+  if (sb) return;
+  const { createClient } = window.__supabaseMock || await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm');
+  sb = createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, { auth: { persistSession: true, storageKey: 'ta.auth' } });
+  const { data } = await sb.auth.getSession();
+  if (!data.session) { const r = await sb.auth.signInAnonymously(); if (r.error) throw r.error; }
+}
+function foutBericht(e) { return String(e.message || e).includes('token_fout') ? 'Verkeerde beheercode.' : 'Mislukt: ' + (e.message || e); }
+
+$('import').addEventListener('click', async () => {
+  $('fout').textContent = ''; $('import').disabled = true; $('import').textContent = 'Bezig…';
+  try {
+    await verbind();
+    const { data, error } = await sb.rpc('beheer_import', { p_token: $('token').value.trim(), p_missies: missies,
+      p_woorden: woorden, p_vervangen: $('vervang').getAttribute('aria-pressed') === 'true' });
+    if (error) throw error;
+    toonOverzicht(data.overzicht, `${data.geimporteerd} missies geïmporteerd`);
+    if (data.fouten.length) $('fout').textContent = `${data.fouten.length} missies overgeslagen: ` + data.fouten.map((f) => `nr ${f.nummer}${f.id ? ' (' + esc(f.id) + ')' : ''}: ${esc(f.reden)}`).join('; ');
+    missies = null; $('bestand').value = ''; $('controle').hidden = true;
+  } catch (e) { $('fout').textContent = foutBericht(e); $('import').disabled = false; }
+  $('import').textContent = 'Importeren';
+});
+$('overzicht').addEventListener('click', async () => {
+  $('fout').textContent = '';
+  try {
+    await verbind();
+    const { data, error } = await sb.rpc('beheer_overzicht', { p_token: $('token').value.trim() });
+    if (error) throw error;
+    toonOverzicht(data, 'Nu in de database');
+  } catch (e) { $('fout').textContent = foutBericht(e); }
+});
+</script>
+</body>
+</html>
