@@ -27,6 +27,7 @@ insert into geheim.config values ('sleutel', encode(extensions.gen_random_bytes(
   on conflict do nothing;
 insert into geheim.config values ('beheer_token', encode(extensions.gen_random_bytes(9), 'hex'))
   on conflict do nothing;
+insert into geheim.config values ('test_pin', '1994') on conflict do nothing;  -- pincode testomgeving
 
 create table if not exists geheim.missies (
   id            text primary key,
@@ -1234,6 +1235,34 @@ begin
    where sessie_id = p_sessie;
 end $$;
 
+-- Testomgeving (pincode): controleren en een testavond met zelfgekozen aantal nepspelers maken
+create or replace function public.test_pin(p_pin text)
+returns boolean language plpgsql security definer set search_path = public as $$
+begin
+  if auth.uid() is null then raise exception 'niet_ingelogd'; end if;
+  if coalesce(p_pin, '') = (select waarde from geheim.config where sleutel = 'test_pin') then return true; end if;
+  perform pg_sleep(1);
+  return false;
+end $$;
+
+create or replace function public.maak_testsessie(p_pin text, p_host_naam text, p_aantal int default 3,
+  p_thema text default 'kerst', p_moeilijkheid text default 'gemengd', p_context text[] default '{}',
+  p_punten boolean default true, p_soorten text[] default null)
+returns json language plpgsql security definer set search_path = public as $$
+declare r json; v_sid uuid; v_host text := left(trim(coalesce(p_host_naam, '')), 20);
+begin
+  if not public.test_pin(p_pin) then raise exception 'pin_fout'; end if;
+  r := public.maak_sessie('Testavond', v_host, p_thema, p_moeilijkheid, p_context, p_punten, p_soorten);
+  v_sid := (r->>'sessie_id')::uuid;
+  update public.sessies set test = true, test_eigenaar = auth.uid() where id = v_sid;
+  insert into public.spelers (sessie_id, user_id, naam, volgnr, geslacht, avatar)
+  select v_sid, gen_random_uuid(), n.naam, 1 + row_number() over (order by n.nr), n.g, (n.nr * 7) % 20
+    from (select * from (values (1, 'Anna', 'v'), (2, 'Bert', 'm'), (3, 'Cees', 'm'), (4, 'Daan', 'm'), (5, 'Eva', 'v'),
+                                (6, 'Fleur', 'v'), (7, 'Gijs', 'm'), (8, 'Hanna', 'v'), (9, 'Joris', 'm'), (10, 'Kim', 'v')) t(nr, naam, g)
+           where lower(t.naam) <> lower(v_host) order by nr limit greatest(2, least(9, coalesce(p_aantal, 3)))) n;
+  return r;
+end $$;
+
 -- Profiel: man/vrouw en avatar. In testmodus krijgen de nepspelers er ook een.
 create or replace function public.zet_profiel(p_sessie uuid, p_geslacht text, p_avatar int)
 returns void language plpgsql security definer set search_path = public as $$
@@ -1415,7 +1444,7 @@ begin
   foreach f in array array[
     'maak_sessie(text,text,text,text,text[],boolean,text[])', 'join_sessie(text,text,text)',
     'overname_check(uuid)', 'host_overname(uuid,boolean)', 'start_spel(uuid)', 'mijn_missie(uuid)',
-    'gebruik_joker(uuid)', 'markeer_voltooid(uuid,uuid[],boolean)', 'nieuwe_opdracht(uuid)', 'nieuwe_ronde(uuid)', 'host_toch_raak(uuid,boolean)', 'push_aanmelden(uuid,text,text,text)', 'zet_profiel(uuid,text,integer)', 'beschuldig(uuid,uuid)', 'meedoen(uuid)',
+    'gebruik_joker(uuid)', 'markeer_voltooid(uuid,uuid[],boolean)', 'nieuwe_opdracht(uuid)', 'nieuwe_ronde(uuid)', 'host_toch_raak(uuid,boolean)', 'push_aanmelden(uuid,text,text,text)', 'zet_profiel(uuid,text,integer)', 'test_pin(text)', 'maak_testsessie(text,text,integer,text,text,text[],boolean,text[])', 'beschuldig(uuid,uuid)', 'meedoen(uuid)',
     'reageer(uuid,boolean)', 'host_sluit_beschuldiging(uuid)', 'host_verwijder(uuid)', 'host_extra_joker(uuid)',
     'host_melding_weg(uuid)', 'ping(uuid)', 'beeindig_spel(uuid)', 'onthul_stap(uuid,boolean)',
     'onthulling_data(uuid)', 'naar_scorebord(uuid)', 'is_lid(uuid)',

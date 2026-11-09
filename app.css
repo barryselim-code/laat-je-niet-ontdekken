@@ -991,3 +991,23 @@ mark.ds-nadruk { background: none; color: #F3D58E; border-bottom: 2px solid rgba
 .av-keus.on { box-shadow: 0 0 0 3px var(--kerstrood, #B3262E); }
 .ini.av, .bk-i.av { padding: 0; overflow: hidden; background: transparent !important; }
 .ini.av svg, .bk-i.av svg { width: 100%; height: 100%; display: block; }
+
+/* ---- avatars bij uitslag, onthulling en scorebord ---- */
+.us-ini.av { padding: 0; overflow: hidden; background: transparent !important; }
+.us-ini.av svg { width: 100%; height: 100%; display: block; }
+.ont-av { display: block; margin-bottom: 6px; filter: drop-shadow(0 8px 18px rgba(0,0,0,.3)); }
+.ont-av svg { display: block; }
+.es-avs { display: flex; justify-content: center; gap: 8px; margin: 6px 0 2px; }
+.rang-av { width: 30px; height: 30px; flex-shrink: 0; margin-right: 10px; }
+.rang-av svg { display: block; }
+
+/* ---- testomgeving ---- */
+.test-blok { display: flex; flex-direction: column; gap: 14px; padding: 16px; border-radius: 18px; background: #EFE8F8; border: 1.5px solid #CBBBE6; }
+.test-k { font-size: 12px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase; color: #5B3FA0; }
+.stapper { display: flex; align-items: center; gap: 14px; }
+.stapper button { width: 48px; height: 48px; border-radius: 14px; border: 1.5px solid #CBBBE6; background: #fff; font-size: 24px; font-weight: 700; color: #5B3FA0; }
+.stapper button:disabled { opacity: .4; }
+.stapper b { min-width: 24px; text-align: center; font-size: 24px; }
+.stapper span { font-size: 14px; color: var(--ink2); }
+.test-blok .toggle-row { background: #fff; }
+.input.pin { text-align: center; font-size: 28px; letter-spacing: 12px; }
