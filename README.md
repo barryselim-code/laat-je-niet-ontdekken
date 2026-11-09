@@ -19,6 +19,7 @@ Installeerbare web-app (PWA) waarin iedereen aan tafel een geheime missie krijgt
 - Onthulling speler voor speler op het scherm van de host (ook op tv), met twee stemrondes: "heeft hij het echt gedaan?" en per afgewezen beschuldiging "raakte die de kern?" (meer ja = alsnog ontmaskerd)
 - Scorebord met titels
 - Speluitleg en 3 uitlegkaarten bij de eerste keer
+- Avond annuleren (host) of tafel verlaten (speler), in de lobby en tijdens het spel; aanmeldingen worden daarna verwijderd
 - Randgevallen: laatkomers, speler verwijderen (gratis wissel voor wie hem als doelwit had), host valt weg (hostrol schuift door), dubbele namen, telefoon leeg (overname met bevestiging van de host), geen reactie op een beschuldiging (host sluit na 2 minuten), pool raakt op (filters versoepelen + melding)
 
 ## Testavond

@@ -32,6 +32,7 @@ const ik = () => (testEigenaar() && S.sessie.test_als && S.spelers.find((p) => p
 const speler = (id) => S.spelers.find((p) => p.id === id);
 const naam = (id) => speler(id)?.naam ?? 'Iemand';
 const isHost = () => S.sessie && ik() && S.sessie.host_id === ik().id;
+const echteHost = () => !!S.sessie && (testEigenaar() || S.sessie.host_id === echteIk()?.id);
 const actief = () => S.spelers.filter((p) => !p.verwijderd);
 const restWacht = (b) => Math.max(0, WACHT - (nu() - new Date(b.laatste_meedoen).getTime()) / 1000);
 const deelnemers = (bid) => S.deel.filter((d) => d.beschuldiging_id === bid).sort((a, b) => new Date(a.tijdstip) - new Date(b.tijdstip));
@@ -309,6 +310,7 @@ function vLobby() {
       ${host ? `<button class="btn rood" data-a="start" ${sp.length < 3 || S.bezig ? 'disabled' : ''}><span style="width:20px;height:20px;color:var(--feestgoud)">${I.ster}</span>${S.bezig ? 'Missies uitdelen…' : 'Deel de missies uit'}</button>
         <p class="foot-note">${sp.length < 3 ? `Nog ${3 - sp.length} speler${3 - sp.length === 1 ? '' : 's'} nodig.` : 'Eerst een korte uitleg, dan je missie. Daarna wordt je scherm donker en discreet.'}</p>`
         : `<div style="display:flex;align-items:center;justify-content:center;gap:10px;color:var(--ink2);font-size:14px;padding:12px"><div class="spinner" style="width:18px;height:18px;border-width:2px"></div>Wachten tot de host de missies uitdeelt…</div>`}
+      ${echteHost() ? `<button class="btn ghost klein" style="color:var(--kerstrood)" data-a="annuleer">Avond annuleren</button>` : `<button class="btn ghost klein" style="color:var(--ink2)" data-a="verlaat">Verlaten</button>`}
     </div></main>`;
 }
 
@@ -474,6 +476,8 @@ function vSpelersTab() {
         .map((b) => `<button class="btn klein" data-a="host-sluit" data-id="${b.id}">${esc(naam(b.beschuldigde_id))} reageert niet: sluit als afgewezen</button>`).join('')}
       <button class="btn klein" style="border-color:var(--rood-rand);color:var(--rood-t)" data-a="beeindig">Spel beëindigen en onthullen</button>
       <p class="foot-note">Iedereen ziet daarna alle missies.</p></div>` : ''}
+    <div class="foot" style="padding-top:${host ? 4 : 20}px">${echteHost() ? `<button class="btn ghost klein" style="color:var(--rood-t)" data-a="annuleer">Avond annuleren</button>`
+      : `<button class="btn ghost klein" style="color:var(--muted)" data-a="verlaat">Tafel verlaten</button>`}</div>
   </div>`;
 }
 
@@ -672,6 +676,12 @@ function vSheet() {
   } else if (sh.type === 'beeindig') {
     inner = `<h2>Spel beëindigen?</h2><p>Lopende beschuldigingen vervallen en de onthulling begint. Dit kan niet terug.</p>
       <button class="btn goud" data-a="beeindig-ok">Beëindigen en onthullen</button><button class="btn ghost" data-a="sheet-dicht">Annuleren</button>`;
+  } else if (sh.type === 'annuleer') {
+    inner = `<h2>Avond annuleren?</h2><p>${S.sessie?.status === 'lobby' ? 'Niemand kan meer aanschuiven.' : 'Het spel stopt direct, zonder onthulling.'} Iedereen ziet dat de avond is geannuleerd en alle aanmeldingen worden verwijderd. Dit kan niet terug.</p>
+      <button class="btn toegeven" data-a="annuleer-ok">Ja, annuleer de avond</button><button class="btn ghost" data-a="sheet-dicht">Nee, terug</button>`;
+  } else if (sh.type === 'verlaat') {
+    inner = `<h2>Tafel verlaten?</h2><p>${S.sessie?.status === 'lobby' ? 'Je aanmelding wordt verwijderd. Met de code kun je later weer aanschuiven.' : 'Je doet niet meer mee en je missie vervalt. Wie jou als doelwit had, krijgt een gratis wissel.'}</p>
+      <button class="btn toegeven" data-a="verlaat-ok">Verlaten</button><button class="btn ghost" data-a="sheet-dicht">Blijven</button>`;
   } else if (sh.type === 'naambestaat') {
     inner = `<h2>${esc(sh.naam)} zit al aan tafel</h2><p>Ben jij dat, op een nieuw toestel (bijvoorbeeld omdat je telefoon leeg is)?</p>
       <button class="btn goud" data-a="join-overname">Ja, ik ben ${esc(sh.naam)}</button><button class="btn" data-a="join-nieuw">Nee, ik ben iemand anders</button>`;
@@ -737,6 +747,7 @@ async function laadAlles() {
   if (sid !== S.sid) return;
   if (ses.error || spl.error) { console.warn(ses.error || spl.error); return; }
   if (!ses.data) return verlaat(S.eersteLaad ? null : 'Deze avond bestaat niet meer, of je bent van tafel gehaald.');
+  if (ses.data.status === 'geannuleerd') return verlaat('De host heeft de avond geannuleerd.');
   const vorig = { status: S.sessie?.status, ontm: ik()?.ontmaskerd, als: ik()?.id, stap: S.sessie && `${S.sessie.onthul_index}${S.sessie.onthul_stap}` };
   S.sessie = ses.data; S.spelers = spl.data || []; S.deel = dee.data || []; S.stemmen = ste.data || []; S.overnames = ove.data || [];
   const nieuweBesch = bes.data || [];
@@ -808,6 +819,7 @@ async function ping() {
   if (!S.sid) return;
   try {
     const t0 = Date.now(), r = await rpc('ping', { p_sessie: S.sid }), t1 = Date.now(), rtt = t1 - t0;
+    if (r?.weg) return planLaad();
     if (r?.nu && (rtt < (S.besteRtt ?? Infinity) || rtt < 400)) { S.besteRtt = Math.min(rtt, S.besteRtt ?? Infinity); S.offset = new Date(r.nu).getTime() - (t0 + t1) / 2; }
   } catch (e) { if (String(e.message).includes('geen_speler')) planLaad(); }
 }
@@ -901,6 +913,10 @@ const ACTIES = {
   'overname-nee': (el) => doe(() => rpc('host_overname', { p_overname: el.dataset.id, p_akkoord: false })),
   'melding-weg': () => doe(() => rpc('host_melding_weg', { p_sessie: S.sid })),
   beeindig: () => { S.sheet = { type: 'beeindig' }; },
+  annuleer: () => { S.sheet = { type: 'annuleer' }; },
+  'annuleer-ok': () => doe(async () => { await rpc('annuleer_sessie', { p_sessie: S.sid }); S.sheet = null; verlaat(); }),
+  verlaat: () => { S.sheet = { type: 'verlaat' }; },
+  'verlaat-ok': () => doe(async () => { await rpc('verlaat_sessie', { p_sessie: S.sid }); S.sheet = null; verlaat(); }),
   'beeindig-ok': () => doe(async () => { await rpc('beeindig_spel', { p_sessie: S.sid }); S.sheet = null; }),
   'onthul-volgende': () => doe(() => rpc('onthul_stap', { p_sessie: S.sid, p_vooruit: true })),
   'onthul-vorige': () => doe(() => rpc('onthul_stap', { p_sessie: S.sid, p_vooruit: false })),

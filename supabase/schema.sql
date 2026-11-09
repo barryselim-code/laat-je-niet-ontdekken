@@ -77,7 +77,7 @@ create table if not exists public.sessies (
   moeilijkheid   text not null default 'gemengd' check (moeilijkheid in ('makkelijk','gemengd','moeilijk')),
   context        text[] not null default '{}',
   punten_aan     boolean not null default true,
-  status         text not null default 'lobby' check (status in ('lobby','spel','onthulling','einde')),
+  status         text not null default 'lobby' check (status in ('lobby','spel','onthulling','einde','geannuleerd')),
   host_id        uuid,
   gestart_op     timestamptz,
   beeindigd_op   timestamptz,
@@ -726,16 +726,20 @@ begin
   perform geheim.sluit_beschuldiging(b.id, false, true);
 end $$;
 
-create or replace function public.host_verwijder(p_speler uuid)
-returns void language plpgsql security definer set search_path = public as $$
-declare d public.spelers; s public.sessies; b record; v_volgende uuid;
+create or replace function geheim.echte_ik(p_sessie uuid) returns public.spelers
+language plpgsql security definer set search_path = public as $$
+declare v public.spelers;
 begin
-  select * into d from public.spelers where id = p_speler;
-  if not found then raise exception 'onbekende_speler'; end if;
-  perform geheim.eis_host(d.sessie_id);
-  s := geheim.sessie_lock(d.sessie_id);
-  if s.host_id = d.id then raise exception 'host_niet_verwijderen'; end if;
+  select * into v from public.spelers
+   where sessie_id = p_sessie and user_id = auth.uid() and not verwijderd;
+  if not found then raise exception 'geen_speler'; end if;
+  return v;
+end $$;
 
+create or replace function geheim.verwijder_speler(d public.spelers) returns void
+language plpgsql security definer set search_path = public as $$
+declare b record; v_volgende uuid;
+begin
   update public.spelers set verwijderd = true where id = d.id;
   -- missies met hem als doelwit krijgen een gratis wissel
   update public.toewijzingen set gratis_wissel = true
@@ -755,6 +759,50 @@ begin
       update public.beschuldigingen set eerste_beschuldiger_id = v_volgende where id = b.id;
     end if;
   end loop;
+end $$;
+
+create or replace function public.host_verwijder(p_speler uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare d public.spelers; s public.sessies;
+begin
+  select * into d from public.spelers where id = p_speler;
+  if not found then raise exception 'onbekende_speler'; end if;
+  perform geheim.eis_host(d.sessie_id);
+  s := geheim.sessie_lock(d.sessie_id);
+  if s.host_id = d.id then raise exception 'host_niet_verwijderen'; end if;
+  perform geheim.verwijder_speler(d);
+end $$;
+
+create or replace function public.annuleer_sessie(p_sessie uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare v public.spelers; s public.sessies;
+begin
+  v := geheim.echte_ik(p_sessie);
+  s := geheim.sessie_lock(p_sessie);
+  if s.host_id is distinct from v.id and s.test_eigenaar is distinct from auth.uid() then
+    raise exception 'niet_host';
+  end if;
+  update public.sessies set status = 'geannuleerd', verloopt = now() + interval '3 minutes'
+   where id = p_sessie;
+end $$;
+
+create or replace function public.verlaat_sessie(p_sessie uuid)
+returns void language plpgsql security definer set search_path = public as $$
+declare v public.spelers; s public.sessies;
+begin
+  v := geheim.echte_ik(p_sessie);
+  s := geheim.sessie_lock(p_sessie);
+  if s.host_id = v.id then
+    perform public.annuleer_sessie(p_sessie);
+    return;
+  end if;
+  if s.status in ('lobby', 'einde', 'geannuleerd') then
+    delete from public.spelers where id = v.id;
+  else
+    perform geheim.verwijder_speler(v);
+  end if;
+  -- de anderen laten verversen (een DELETE komt niet via het sessiefilter binnen)
+  update public.sessies set test_als = case when test_als = v.id then null else test_als end where id = p_sessie;
 end $$;
 
 create or replace function public.host_extra_joker(p_speler uuid)
@@ -793,11 +841,13 @@ create or replace function public.ping(p_sessie uuid)
 returns json language plpgsql security definer set search_path = public as $$
 declare v public.spelers; s public.sessies; v_host_gezien timestamptz; v_nieuw uuid;
 begin
+  perform geheim.opruimen();
+  select * into s from public.sessies where id = p_sessie;
+  if not found then return json_build_object('nu', now(), 'weg', true); end if;
   v := geheim.mij(p_sessie);
   insert into public.aanwezig values (v.id, now())
     on conflict (speler_id) do update set laatst_gezien = now();
-  select * into s from public.sessies where id = p_sessie;
-  if not s.test and s.host_id is distinct from v.id then
+  if not s.test and s.status <> 'geannuleerd' and s.host_id is distinct from v.id then
     select laatst_gezien into v_host_gezien from public.aanwezig where speler_id = s.host_id;
     if v_host_gezien is null or v_host_gezien < now() - interval '90 seconds'
        or exists (select 1 from public.spelers where id = s.host_id and verwijderd) then
@@ -1132,7 +1182,7 @@ begin
     'reageer(uuid,boolean)', 'host_sluit_beschuldiging(uuid)', 'host_verwijder(uuid)', 'host_extra_joker(uuid)',
     'host_melding_weg(uuid)', 'ping(uuid)', 'beeindig_spel(uuid)', 'onthul_stap(uuid,boolean)',
     'onthulling_data(uuid)', 'stem(uuid,uuid,text,uuid)', 'naar_scorebord(uuid)', 'is_lid(uuid)',
-    'test_wissel(uuid,uuid)', 'beheer_overzicht(text)', 'beheer_import(text,jsonb,jsonb,boolean)'
+    'test_wissel(uuid,uuid)', 'annuleer_sessie(uuid)', 'verlaat_sessie(uuid)', 'beheer_overzicht(text)', 'beheer_import(text,jsonb,jsonb,boolean)'
   ] loop
     execute format('revoke execute on function public.%s from public, anon', f);
     execute format('grant execute on function public.%s to authenticated', f);
