@@ -1,5 +1,5 @@
 // Service worker: app-schil offline beschikbaar, data altijd live via Supabase.
-const VERSIE = 'ljno-v11';
+const VERSIE = 'ljno-v13';
 const SCHIL = ['./', 'index.html', 'app.css', 'app.js', 'config.js', 'lib/qrcode.js', 'manifest.webmanifest',
   'icons/logo-v4.svg', 'icons/logo-v4-32.png', 'icons/logo-v4-192.png', 'icons/logo-v4-512.png', 'icons/logo-v4-apple-touch.png', 'favicon.ico'];
 
@@ -22,4 +22,25 @@ self.addEventListener('fetch', (e) => {
     if (res.ok || res.type === 'opaque') { const kopie = res.clone(); caches.open(VERSIE).then((c) => c.put(e.request, kopie)); }
     return res;
   }).catch(() => caches.match(e.request).then((r) => r || caches.match('index.html'))));
+});
+
+// W4/W5: pushmeldingen bij Betrapt!, ook als het scherm op slot zit
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch { d = { tekst: e.data && e.data.text() }; }
+  const patroon = d.soort === 'betrap' ? [150, 80, 150] : [300, 120, 300, 120, 300];
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((cs) => {
+    const zichtbaar = cs.find((c) => c.visibilityState === 'visible');
+    if (zichtbaar) { zichtbaar.postMessage({ soort: 'tril', patroon }); return; } // app is open: alleen trillen
+    return self.registration.showNotification(d.titel || 'Betrapt!', {
+      body: d.tekst || '', tag: d.tag || 'betrapt', renotify: true, vibrate: patroon,
+      icon: 'icons/logo-v4-192.png', badge: 'icons/logo-v4-192.png', requireInteraction: d.soort !== 'betrap',
+      data: { url: self.registration.scope },
+    });
+  }));
+});
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    .then((cs) => (cs[0] ? cs[0].focus() : self.clients.openWindow((e.notification.data && e.notification.data.url) || './'))));
 });
